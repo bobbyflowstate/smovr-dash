@@ -3,38 +3,65 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 
 export default function SubmitPage() {
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState<string | undefined>("");
   const [notes, setNotes] = useState("");
+  const [appointmentDateTime, setAppointmentDateTime] = useState<Date | null>(
+    new Date()
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
-  const createPatient = useMutation(api.patients.createPatient);
+  const scheduleAppointment = useMutation(api.patients.scheduleAppointment);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setSuccess(false);
+    setSuccessMessage("");
 
-    if (!name || !phone) {
-      setError("Name and phone number are required.");
+    if (!name || !phone || !appointmentDateTime) {
+      setError("Name, phone number, and appointment date/time are required.");
+      return;
+    }
+
+    if (appointmentDateTime < new Date()) {
+      setError("Cannot schedule an appointment in the past.");
+      return;
+    }
+
+    if (!isValidPhoneNumber(phone)) {
+      setError("Please enter a valid phone number.");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const patientId = await createPatient({ name, phone, notes });
-      console.log("Webhook placeholder: Patient created with ID:", patientId);
-      setSuccess(true);
-      setName("");
-      setPhone("");
-      setNotes("");
+      const result = await scheduleAppointment({
+        name,
+        phone,
+        notes,
+        appointmentDateTime: appointmentDateTime.toISOString(),
+      });
+
+      if (result.newAppointment) {
+        setSuccessMessage("New appointment scheduled successfully!");
+        setName("");
+        setPhone("");
+        setNotes("");
+        setAppointmentDateTime(new Date());
+      } else {
+        setError("This appointment already exists for this patient.");
+      }
     } catch (err) {
-      setError("Failed to create patient. Please try again.");
+      setError("Failed to schedule appointment. Please try again.");
       console.error(err);
     } finally {
       setIsSubmitting(false);
@@ -46,7 +73,10 @@ export default function SubmitPage() {
       <h1 className="text-2xl font-bold mb-4">Patient Submission Form</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+          <label
+            htmlFor="name"
+            className="block text-sm font-medium text-gray-700"
+          >
             Name
           </label>
           <input
@@ -59,20 +89,43 @@ export default function SubmitPage() {
           />
         </div>
         <div>
-          <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
+          <label
+            htmlFor="phone"
+            className="block text-sm font-medium text-gray-700"
+          >
             Phone Number
           </label>
-          <input
-            type="tel"
+          <PhoneInput
             id="phone"
+            placeholder="Enter phone number"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={setPhone}
             className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            required
+            defaultCountry="US"
           />
         </div>
         <div>
-          <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
+          <label
+            htmlFor="appointmentDateTime"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Appointment Date & Time
+          </label>
+          <DatePicker
+            id="appointmentDateTime"
+            selected={appointmentDateTime}
+            onChange={(date) => setAppointmentDateTime(date)}
+            showTimeSelect
+            dateFormat="Pp"
+            minDate={new Date()}
+            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="notes"
+            className="block text-sm font-medium text-gray-700"
+          >
             Notes (Optional)
           </label>
           <textarea
@@ -84,8 +137,10 @@ export default function SubmitPage() {
           />
         </div>
         {error && <p className="text-red-500 text-sm">{error}</p>}
-        {success && (
-          <p className="text-green-500 text-sm">Patient created successfully!</p>
+        {successMessage && (
+          <p className="text-green-500 text-sm">
+            {successMessage}
+          </p>
         )}
         <div>
           <button
@@ -100,3 +155,4 @@ export default function SubmitPage() {
     </div>
   );
 }
+
