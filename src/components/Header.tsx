@@ -8,8 +8,8 @@ export default function Header() {
         <nav>
           <ul className="flex space-x-4">
             <li>
-              <Link href="/submit" className="hover:text-gray-300">
-                Submit Patient
+              <Link href="/submit" className="hover:text-gray-300 p-2 border-2 border-gray-500 rounded-md">
+                New Appointment
               </Link>
             </li>
             <li>
