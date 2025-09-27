@@ -2,20 +2,98 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Dark mode styles for third-party components */
+
+/* React DatePicker Dark Mode */
+.datepicker-dark .react-datepicker-wrapper,
+.datepicker-dark .react-datepicker__input-container {
+  @apply w-full;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark .react-datepicker {
+  @apply bg-gray-800 border-gray-600;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.dark .react-datepicker__header {
+  @apply bg-gray-700 border-gray-600;
+}
+
+.dark .react-datepicker__current-month,
+.dark .react-datepicker-time__header {
+  @apply text-white;
+}
+
+.dark .react-datepicker__day-name,
+.dark .react-datepicker__day,
+.dark .react-datepicker__time-name {
+  @apply text-gray-300;
+}
+
+.dark .react-datepicker__day:hover {
+  @apply bg-gray-600;
+}
+
+.dark .react-datepicker__day--selected,
+.dark .react-datepicker__day--in-selecting-range,
+.dark .react-datepicker__day--in-range {
+  @apply bg-blue-600 text-white;
+}
+
+.dark .react-datepicker__day--keyboard-selected {
+  @apply bg-blue-700;
+}
+
+.dark .react-datepicker__navigation {
+  @apply text-gray-400;
+}
+
+.dark .react-datepicker__navigation:hover {
+  @apply text-white;
+}
+
+.dark .react-datepicker__time-container {
+  @apply border-gray-600;
+}
+
+.dark .react-datepicker__time {
+  @apply bg-gray-800;
+}
+
+.dark .react-datepicker__time-box {
+  @apply bg-gray-800;
+}
+
+.dark .react-datepicker__time-list-item {
+  @apply text-gray-300;
+}
+
+.dark .react-datepicker__time-list-item:hover {
+  @apply bg-gray-600;
+}
+
+.dark .react-datepicker__time-list-item--selected {
+  @apply bg-blue-600 text-white;
+}
+
+/* React Phone Number Input Dark Mode */
+.phone-input-dark .PhoneInput {
+  @apply w-full;
+}
+
+.dark .PhoneInputInput {
+  @apply bg-gray-700 border-gray-600 text-white;
+  @apply focus:ring-2 focus:ring-blue-400 focus:border-blue-400;
+  @apply px-4 py-3 rounded-lg shadow-sm transition-colors;
+}
+
+.dark .PhoneInputCountrySelect {
+  @apply bg-gray-700 border-gray-600 text-white;
+}
+
+.dark .PhoneInputCountrySelectArrow {
+  @apply text-gray-400;
+}
+
+.dark .PhoneInputCountryIcon {
+  @apply opacity-80;
 }
