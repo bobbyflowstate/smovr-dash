@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as appointments from "../appointments.js";
 import type * as patients from "../patients.js";
+import type * as users from "../users.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -27,6 +28,7 @@ import type * as patients from "../patients.js";
 declare const fullApi: ApiFromModules<{
   appointments: typeof appointments;
   patients: typeof patients;
+  users: typeof users;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

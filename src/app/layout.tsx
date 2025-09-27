@@ -4,6 +4,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import ConvexClientProvider from "./ConvexClientProvider";
+import AuthenticatedApp from "./AuthenticatedApp";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,11 +22,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} flex flex-col min-h-screen`}>
         <ConvexClientProvider>
-          <Header />
-          <main className="flex-grow container mx-auto p-4">
-            {children}
-          </main>
-          <Footer />
+          <AuthenticatedApp>
+            <Header />
+            <main className="flex-grow container mx-auto p-4">
+              {children}
+            </main>
+            <Footer />
+          </AuthenticatedApp>
         </ConvexClientProvider>
       </body>
     </html>

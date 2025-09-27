@@ -9,11 +9,31 @@ export const scheduleAppointment = mutation({
     appointmentDateTime: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if patient already exists
+    const identity = await ctx.auth.getUserIdentity();
+
+    if (!identity) {
+      throw new Error("User identity not found. Make sure you are logged in.");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier)
+      )
+      .unique();
+
+    if (!user) {
+      throw new Error("User not found in database.");
+    }
+
+    const teamId = user.teamId;
+
+    // Check if patient already exists in the team
     const existingPatient = await ctx.db
       .query("patients")
-      .withIndex("by_phone", (q) => q.eq("phone", args.phone))
-      .unique();
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .filter((q) => q.eq(q.field("phone"), args.phone))
+      .first();
 
     let patientId;
 
@@ -24,13 +44,14 @@ export const scheduleAppointment = mutation({
       patientId = await ctx.db.insert("patients", {
         name: args.name,
         phone: args.phone,
-        // The notes from the form are now associated with the appointment
+        teamId,
       });
     }
 
     // Check if appointment already exists for this patient at this time
     const existingAppointment = await ctx.db
       .query("appointments")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .filter((q) =>
         q.and(
           q.eq(q.field("patientId"), patientId),
@@ -50,6 +71,7 @@ export const scheduleAppointment = mutation({
       patientId,
       dateTime: args.appointmentDateTime,
       notes: args.notes,
+      teamId,
     });
 
     // Webhook placeholder
