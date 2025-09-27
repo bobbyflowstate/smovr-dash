@@ -2,24 +2,24 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
 export const get = query({
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    console.log("appointments.get: Getting appointments for user:", args.userEmail);
 
-    if (!identity) {
-      return [];
-    }
-
+    // Look up the user by their email
     const user = await ctx.db
       .query("users")
-      .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier)
-      )
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
+      console.log("appointments.get: User not found in database");
       return [];
     }
 
+    console.log("appointments.get: Found user:", user._id);
     const teamId = user.teamId;
 
     const appointments = await ctx.db
@@ -42,25 +42,24 @@ export const get = query({
 });
 
 export const cancel = mutation({
-  args: { id: v.id("appointments") },
+  args: { 
+    id: v.id("appointments"),
+    userEmail: v.string(),
+  },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    console.log("appointments.cancel: Canceling appointment for user:", args.userEmail);
 
-    if (!identity) {
-      throw new Error("User identity not found. Make sure you are logged in.");
-    }
-
+    // Look up the user by their email
     const user = await ctx.db
       .query("users")
-      .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier)
-      )
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
       throw new Error("User not found in database.");
     }
 
+    console.log("appointments.cancel: Found user:", user._id);
     const teamId = user.teamId;
 
     const appointment = await ctx.db.get(args.id);
