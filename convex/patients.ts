@@ -7,25 +7,22 @@ export const scheduleAppointment = mutation({
     phone: v.string(),
     notes: v.optional(v.string()),
     appointmentDateTime: v.string(),
+    userEmail: v.string(), // Pass user email from the authenticated session
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    console.log("scheduleAppointment: Starting mutation for user:", args.userEmail);
 
-    if (!identity) {
-      throw new Error("User identity not found. Make sure you are logged in.");
-    }
-
+    // Look up the user by their email (which should be linked to their Logto ID)
     const user = await ctx.db
       .query("users")
-      .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier)
-      )
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
-      throw new Error("User not found in database.");
+      throw new Error("User not found in database. Please contact support.");
     }
 
+    console.log("scheduleAppointment: Found user:", user._id);
     const teamId = user.teamId;
 
     // Check if patient already exists in the team

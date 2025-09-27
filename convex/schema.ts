@@ -7,7 +7,9 @@ export default defineSchema({
     email: v.string(),
     tokenIdentifier: v.string(),
     teamId: v.id("teams"),
-  }).index("by_token", ["tokenIdentifier"]),
+  })
+    .index("by_token", ["tokenIdentifier"])
+    .index("by_email", ["email"]),
 
   teams: defineTable({
     name: v.string(),

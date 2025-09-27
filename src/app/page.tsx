@@ -3,6 +3,7 @@ import SignIn from './sign-in';
 import SignOut from './sign-out';
 import { logtoConfig } from './logto';
 import Link from 'next/link';
+import { extractDisplayName } from '@/lib/auth-utils';
 
 export default async function Home() {
   const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
@@ -19,7 +20,7 @@ export default async function Home() {
                 Welcome to Smovr Dashboard
               </h1>
               <p className="text-gray-600 dark:text-gray-400 text-lg">
-                Hello, {claims?.name || claims?.sub}! Ready to manage your healthcare data.
+                Hello, {extractDisplayName(claims)}! Ready to manage your healthcare data.
               </p>
             </div>
           </div>
