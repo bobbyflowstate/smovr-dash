@@ -1,32 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 
 interface SubmitFormProps {
-  userEmail: string;
   userName: string;
-  logtoUserId: string;
+  teamName: string;
 }
 
-export default function SubmitForm({ userEmail, userName, logtoUserId }: SubmitFormProps) {
+export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState<string | undefined>("");
   const [notes, setNotes] = useState("");
   const [appointmentDateTime, setAppointmentDateTime] = useState<Date | null>(
     new Date()
   );
+  const [currentTeamName, setCurrentTeamName] = useState<string>(teamName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const scheduleAppointment = useMutation(api.patients.scheduleAppointment);
-  const getOrCreateUser = useMutation(api.users.getOrCreateUserByEmail);
+  // No more direct Convex calls - using API routes instead
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,27 +48,34 @@ export default function SubmitForm({ userEmail, userName, logtoUserId }: SubmitF
     setIsSubmitting(true);
 
     try {
-      console.log('SubmitForm: Using user info:', { userEmail, userName, logtoUserId });
+      console.log('SubmitForm: Submitting appointment for user:', userName);
 
-      // Ensure user exists in Convex database
-      console.log('SubmitForm: Creating/getting user in Convex...');
-      const userId = await getOrCreateUser({
-        email: userEmail,
-        name: userName,
-        logtoUserId: logtoUserId,
+      // 🔒 Create appointment via authenticated API route
+      console.log('SubmitForm: Creating appointment...');
+      const appointmentResponse = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          phone,
+          notes,
+          appointmentDateTime: appointmentDateTime.toISOString(),
+        }),
       });
 
-      console.log('SubmitForm: User ID from Convex:', userId);
+      if (!appointmentResponse.ok) {
+        const errorData = await appointmentResponse.json();
+        throw new Error(errorData.error || 'Failed to create appointment');
+      }
 
-      // Now schedule the appointment
-      console.log('SubmitForm: Scheduling appointment...');
-      const result = await scheduleAppointment({
-        name,
-        phone,
-        notes,
-        appointmentDateTime: appointmentDateTime.toISOString(),
-        userEmail: userEmail,
-      });
+      const result = await appointmentResponse.json();
+
+      // Update team name if provided
+      if (result.teamName) {
+        setCurrentTeamName(result.teamName);
+      }
 
       if (result.newAppointment) {
         setSuccessMessage("New appointment scheduled successfully!");
@@ -95,7 +99,7 @@ export default function SubmitForm({ userEmail, userName, logtoUserId }: SubmitF
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 transition-colors">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Patient Submission Form</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Logged in as: {userName} ({userEmail})
+          Submitting appointment for: <span className="font-semibold">{currentTeamName}</span>
         </p>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>

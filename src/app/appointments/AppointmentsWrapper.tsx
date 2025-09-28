@@ -53,11 +53,31 @@ export default async function AppointmentsWrapper() {
     );
   }
 
+  // Get team name via authenticated API route
+  let teamName = "Unknown Team";
+  
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/users`, {
+      headers: {
+        'Cookie': cookieStore.toString()
+      }
+    });
+    
+    if (response.ok) {
+      const userInfo = await response.json();
+      teamName = userInfo.teamName;
+    }
+  } catch (error) {
+    console.error('AppointmentsWrapper: Error fetching team info:', error);
+  }
+
   return (
     <AppointmentsClient 
-      userEmail={userIdentifier}
       userName={name}
-      logtoUserId={logtoUserId}
+      teamName={teamName}
     />
   );
 }

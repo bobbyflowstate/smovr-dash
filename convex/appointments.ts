@@ -22,6 +22,9 @@ export const get = query({
     console.log("appointments.get: Found user:", user._id);
     const teamId = user.teamId;
 
+    // Get team information
+    const team = await ctx.db.get(teamId);
+
     const appointments = await ctx.db
       .query("appointments")
       .withIndex("by_team", (q) => q.eq("teamId", teamId))
@@ -37,7 +40,10 @@ export const get = query({
       })
     );
 
-    return appointmentsWithPatient;
+    return {
+      appointments: appointmentsWithPatient,
+      teamName: team?.name || "Unknown Team"
+    };
   },
 });
 

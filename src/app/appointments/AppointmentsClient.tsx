@@ -1,24 +1,47 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { format } from "date-fns";
 import Link from "next/link";
 import { Id } from "../../../convex/_generated/dataModel";
 
 interface AppointmentsClientProps {
-  userEmail: string;
   userName: string;
-  logtoUserId: string;
+  teamName: string;
 }
 
-export default function AppointmentsClient({ userEmail, userName, logtoUserId }: AppointmentsClientProps) {
-  const appointments = useQuery(api.appointments.get, { userEmail });
-  const cancelAppointment = useMutation(api.appointments.cancel);
+export default function AppointmentsClient({ userName, teamName }: AppointmentsClientProps) {
+  const [appointments, setAppointments] = useState<any[] | null>(null);
+  const [currentTeamName, setCurrentTeamName] = useState<string>(teamName);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [cancelConfirmationId, setCancelConfirmationId] = useState<Id<"appointments"> | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
+
+  // 🔒 Fetch appointments via authenticated API route
+  useEffect(() => {
+    const fetchAppointments = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/appointments');
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch appointments');
+        }
+        
+        const data = await response.json();
+        setAppointments(data.appointments);
+        setCurrentTeamName(data.teamName);
+      } catch (error) {
+        console.error('Error fetching appointments:', error);
+        setAppointments([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAppointments();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -49,13 +72,34 @@ export default function AppointmentsClient({ userEmail, userName, logtoUserId }:
     }
     acc[date].push(appointment);
     return acc;
-  }, {} as Record<string, typeof filteredAppointments>);
+  }, {} as Record<string, any[]>);
 
-  const handleCancelClick = (appointmentId: Id<"appointments">) => {
+  const handleCancelClick = async (appointmentId: Id<"appointments">) => {
     if (cancelConfirmationId === appointmentId) {
-      console.log('AppointmentsClient: Canceling appointment with user email:', userEmail);
-      cancelAppointment({ id: appointmentId, userEmail });
-      setCancelConfirmationId(null);
+      try {
+        console.log('AppointmentsClient: Canceling appointment:', appointmentId);
+        
+        // 🔒 Cancel via authenticated API route
+        const response = await fetch(`/api/appointments/${appointmentId}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to cancel appointment');
+        }
+
+        // Refresh appointments list
+        const appointmentsResponse = await fetch('/api/appointments');
+        if (appointmentsResponse.ok) {
+          const data = await appointmentsResponse.json();
+          setAppointments(data.appointments);
+          setCurrentTeamName(data.teamName);
+        }
+
+        setCancelConfirmationId(null);
+      } catch (error) {
+        console.error('Error canceling appointment:', error);
+      }
     } else {
       setCancelConfirmationId(appointmentId);
     }
@@ -69,7 +113,7 @@ export default function AppointmentsClient({ userEmail, userName, logtoUserId }:
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upcoming Appointments</h1>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Viewing appointments for: {userName} ({userEmail})
+              Viewing appointments for: {currentTeamName}
             </p>
           </div>
           <Link 
@@ -95,7 +139,7 @@ export default function AppointmentsClient({ userEmail, userName, logtoUserId }:
       </div>
 
       {/* Loading State */}
-      {appointments === undefined && (
+      {isLoading && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center transition-colors">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-400">Loading appointments...</p>
@@ -122,7 +166,7 @@ export default function AppointmentsClient({ userEmail, userName, logtoUserId }:
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {appointmentsForDay.map((appointment) => (
+                  {(appointmentsForDay as any[]).map((appointment: any) => (
                     <tr key={appointment._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                         {format(new Date(appointment.dateTime), "p")}
@@ -150,7 +194,7 @@ export default function AppointmentsClient({ userEmail, userName, logtoUserId }:
             
             {/* Mobile Card View */}
             <div className="md:hidden p-4 space-y-4">
-              {appointmentsForDay.map((appointment) => (
+              {(appointmentsForDay as any[]).map((appointment: any) => (
                 <div key={appointment._id} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>

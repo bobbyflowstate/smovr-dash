@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import ConvexClientProvider from "./ConvexClientProvider";
 import AuthenticatedApp from "./AuthenticatedApp";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -23,15 +22,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors`}>
         <ThemeProvider>
-          <ConvexClientProvider>
-            <AuthenticatedApp>
-              <Header />
-              <main className="flex-grow container mx-auto p-4">
-                {children}
-              </main>
-              <Footer />
-            </AuthenticatedApp>
-          </ConvexClientProvider>
+          <AuthenticatedApp>
+            <Header />
+            <main className="flex-grow container mx-auto p-4">
+              {children}
+            </main>
+            <Footer />
+          </AuthenticatedApp>
         </ThemeProvider>
       </body>
     </html>

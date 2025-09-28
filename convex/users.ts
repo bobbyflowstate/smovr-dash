@@ -1,4 +1,4 @@
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 // New app-layer authentication approach
@@ -39,6 +39,37 @@ export const getOrCreateUserByEmail = mutation({
 
     console.log("getOrCreateUserByEmail: Created new user:", newUserId);
     return newUserId;
+  },
+});
+
+export const getUserWithTeam = query({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    console.log("getUserWithTeam: Getting user and team info for:", args.userEmail);
+
+    // Look up the user by their email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+
+    if (!user) {
+      console.log("getUserWithTeam: User not found in database");
+      return null;
+    }
+
+    // Get team information
+    const team = await ctx.db.get(user.teamId);
+
+    return {
+      userId: user._id,
+      userName: user.name,
+      userEmail: user.email,
+      teamId: user.teamId,
+      teamName: team?.name || "Unknown Team"
+    };
   },
 });
 
