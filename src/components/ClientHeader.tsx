@@ -14,7 +14,7 @@ export default function ClientHeader({ userName, onSignOut }: ClientHeaderProps)
     <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <Link href="/" className="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-          Smovr Dash
+          SMOVR
         </Link>
         <nav>
           <ul className="flex space-x-6">
