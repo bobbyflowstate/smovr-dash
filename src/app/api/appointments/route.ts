@@ -5,7 +5,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import { extractDisplayName } from '@/lib/auth-utils';
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
 // GET /api/appointments - Get user's appointments
 export async function GET() {
