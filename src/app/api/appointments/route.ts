@@ -59,10 +59,10 @@ export async function POST(request: NextRequest) {
 
     // 🔒 Then create appointment
     const result = await convex.mutation(api.patients.scheduleAppointment, {
-      name: body.name,
       phone: body.phone,
       notes: body.notes,
       appointmentDateTime: body.appointmentDateTime,
+      metadata: body.metadata, // Optional JSON metadata
       userEmail, // 🛡️ Server provides the real user email
     });
 

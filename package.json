@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@convex-dev/migrations": "^0.2.9",
     "@logto/next": "^4.2.6",
     "convex": "^1.27.0",
     "date-fns": "^4.1.0",

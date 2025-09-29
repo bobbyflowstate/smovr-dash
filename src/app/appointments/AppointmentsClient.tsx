@@ -58,10 +58,9 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
 
   const filteredAppointments = appointments
     ?.filter((appointment) => {
-      const patientName = appointment.patient?.name.toLowerCase() || "";
       const patientPhone = appointment.patient?.phone || "";
       const query = searchQuery.toLowerCase();
-      return patientName.includes(query) || patientPhone.includes(query);
+      return patientPhone.includes(query);
     })
     .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 
@@ -131,7 +130,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors">
         <input
           type="text"
-          placeholder="Search by name or phone..."
+                  placeholder="Search by phone number..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
@@ -160,7 +159,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
                     <th className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -172,8 +171,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                         {format(new Date(appointment.dateTime), "p")}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                        <div className="font-medium">{appointment.patient?.name}</div>
-                        <div className="text-gray-500 dark:text-gray-400">{appointment.patient?.phone}</div>
+                        <div className="font-medium">{appointment.patient?.phone}</div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
                         {appointment.notes || "—"}
@@ -198,8 +196,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                 <div key={appointment._id} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{appointment.patient?.name}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{appointment.patient?.phone}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{appointment.patient?.phone}</p>
                     </div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {format(new Date(appointment.dateTime), "p")}

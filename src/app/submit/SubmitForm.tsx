@@ -12,7 +12,6 @@ interface SubmitFormProps {
 }
 
 export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
-  const [name, setName] = useState("");
   const [phone, setPhone] = useState<string | undefined>("");
   const [notes, setNotes] = useState("");
   const [appointmentDateTime, setAppointmentDateTime] = useState<Date | null>(
@@ -30,8 +29,8 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
     setError("");
     setSuccessMessage("");
 
-    if (!name || !phone || !appointmentDateTime) {
-      setError("Name, phone number, and appointment date/time are required.");
+    if (!phone || !appointmentDateTime) {
+      setError("Phone number and appointment date/time are required.");
       return;
     }
 
@@ -58,10 +57,10 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name,
           phone,
           notes,
           appointmentDateTime: appointmentDateTime.toISOString(),
+          metadata: {}, // Empty metadata for now, can be extended later
         }),
       });
 
@@ -79,7 +78,6 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
 
       if (result.newAppointment) {
         setSuccessMessage("New appointment scheduled successfully!");
-        setName("");
         setPhone("");
         setNotes("");
         setAppointmentDateTime(new Date());
@@ -102,22 +100,6 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
           Submitting appointment for: <span className="font-semibold">{currentTeamName}</span>
         </p>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label
-              htmlFor="name"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-            >
-              Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-              required
-            />
-          </div>
           <div>
             <label
               htmlFor="phone"

@@ -3,10 +3,10 @@ import { v } from "convex/values";
 
 export const scheduleAppointment = mutation({
   args: {
-    name: v.string(),
     phone: v.string(),
     notes: v.optional(v.string()),
     appointmentDateTime: v.string(),
+    metadata: v.optional(v.object({})), // Flexible JSON metadata
     userEmail: v.string(), // Pass user email from the authenticated session
   },
   handler: async (ctx, args) => {
@@ -39,7 +39,6 @@ export const scheduleAppointment = mutation({
     } else {
       // Create a new patient
       patientId = await ctx.db.insert("patients", {
-        name: args.name,
         phone: args.phone,
         teamId,
       });
@@ -68,6 +67,7 @@ export const scheduleAppointment = mutation({
       patientId,
       dateTime: args.appointmentDateTime,
       notes: args.notes,
+      metadata: args.metadata,
       teamId,
     });
 

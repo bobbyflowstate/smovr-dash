@@ -16,7 +16,6 @@ export default defineSchema({
   }),
 
   patients: defineTable({
-    name: v.string(),
     phone: v.string(),
     notes: v.optional(v.string()),
     teamId: v.id("teams"),
@@ -28,6 +27,7 @@ export default defineSchema({
     patientId: v.id("patients"),
     dateTime: v.string(),
     notes: v.optional(v.string()),
+    metadata: v.optional(v.object({})), // Flexible JSON metadata
     teamId: v.id("teams"),
   }).index("by_team", ["teamId"]),
 });
