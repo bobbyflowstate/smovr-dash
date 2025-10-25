@@ -12,8 +12,10 @@ export default async function Header() {
     return null; // Don't show header if not authenticated
   }
 
-  // Fetch user name from Convex database
+  // Fetch user name, team name, and team ID from Convex database
   let userName = extractDisplayName(claims); // Fallback to Logto claims
+  let teamId: string | null = null;
+  let teamName: string | null = null;
   
   try {
     const { cookies } = await import('next/headers');
@@ -28,6 +30,8 @@ export default async function Header() {
     if (response.ok) {
       const userInfo = await response.json();
       userName = userInfo.userName; // Use name from Convex database
+      teamId = userInfo.teamId;
+      teamName = userInfo.teamName;
     }
   } catch (error) {
     console.error('Header: Error fetching user info:', error);
@@ -36,7 +40,9 @@ export default async function Header() {
 
   return (
     <ClientHeader 
-      userName={userName} 
+      userName={userName}
+      teamId={teamId}
+      teamName={teamName}
       onSignOut={async () => {
         'use server';
         await signOut(logtoConfig);
