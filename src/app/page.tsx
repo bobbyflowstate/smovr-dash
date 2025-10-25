@@ -8,6 +8,31 @@ import { extractDisplayName } from '@/lib/auth-utils';
 export default async function Home() {
   const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
 
+  // Fetch user and team info from Convex database
+  let userName = extractDisplayName(claims);
+  let teamName: string | null = null;
+  
+  if (isAuthenticated) {
+    try {
+      const { cookies } = await import('next/headers');
+      const cookieStore = cookies();
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/users`, {
+        headers: {
+          'Cookie': cookieStore.toString()
+        }
+      });
+      
+      if (response.ok) {
+        const userInfo = await response.json();
+        userName = userInfo.userName;
+        teamName = userInfo.teamName;
+      }
+    } catch (error) {
+      console.error('Home: Error fetching user info:', error);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       {isAuthenticated ? (
@@ -17,10 +42,10 @@ export default async function Home() {
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 mb-8 transition-colors">
             <div className="text-center">
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-                Welcome to Arizona Integrated Medical
+                {teamName ? `Welcome to ${teamName}` : "Welcome"}
               </h1>
               <p className="text-gray-600 dark:text-gray-400 text-lg">
-                Hello, {extractDisplayName(claims)}! Ready to manage your healthcare data.
+                Hello, {userName}! Ready to manage your team and customer data.
               </p>
             </div>
           </div>
