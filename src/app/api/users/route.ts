@@ -40,7 +40,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      userName,
+      userName: userInfo?.userName || userName, // Use Convex name, fallback to Logto name
       userEmail: userIdentifier,
       teamName: userInfo?.teamName || "Unknown Team",
       teamId: userInfo?.teamId,
