@@ -3,6 +3,11 @@
  * Priority: name -> username -> email (part before @) -> fallback
  */
 export function extractDisplayName(claims: any, fallback: string = 'Unknown User'): string {
+  // Guard against undefined/null claims
+  if (!claims) {
+    return fallback;
+  }
+  
   // Use name if available
   if (claims.name) {
     return claims.name;
@@ -31,5 +36,8 @@ export function extractDisplayName(claims: any, fallback: string = 'Unknown User
  * Priority: email -> username -> sub (user ID)
  */
 export function getUserIdentifier(claims: any): string | null {
+  if (!claims) {
+    return null;
+  }
   return claims.email || claims.username || claims.sub || null;
 }
