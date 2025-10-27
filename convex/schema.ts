@@ -30,4 +30,16 @@ export default defineSchema({
     metadata: v.optional(v.object({})), // Flexible JSON metadata
     teamId: v.id("teams"),
   }).index("by_team", ["teamId"]),
+
+  logs: defineTable({
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    action: v.string(), // "15-late", "30-late", "reschedule-cancel"
+    message: v.string(), // Human-readable message
+    teamId: v.id("teams"),
+    timestamp: v.string(), // ISO timestamp
+  })
+    .index("by_team", ["teamId"])
+    .index("by_appointment", ["appointmentId"])
+    .index("by_appointment_action", ["appointmentId", "action"]),
 });

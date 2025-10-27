@@ -47,6 +47,16 @@ export const get = query({
   },
 });
 
+export const getById = query({
+  args: {
+    appointmentId: v.id("appointments"),
+  },
+  handler: async (ctx, args) => {
+    const appointment = await ctx.db.get(args.appointmentId);
+    return appointment;
+  },
+});
+
 export const cancel = mutation({
   args: { 
     id: v.id("appointments"),

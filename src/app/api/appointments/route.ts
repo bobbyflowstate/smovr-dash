@@ -71,6 +71,58 @@ export async function POST(request: NextRequest) {
       userEmail 
     });
 
+    // 🔗 Send webhook if new appointment was created
+    if (result.newAppointment && result.appointmentId) {
+      const webhookUrl = process.env.WEBHOOK_URL;
+      
+      if (webhookUrl) {
+        // Create abort controller for 5 second timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          const appointmentId = result.appointmentId;
+          
+          const webhookPayload = {
+            "15 min late": `${baseUrl}/15-late/${appointmentId}`,
+            "30 min late": `${baseUrl}/30-late/${appointmentId}`,
+            "Reschedule or cancel": `${baseUrl}/reschedule-cancel/${appointmentId}`
+          };
+
+          console.log('Sending webhook to:', webhookUrl);
+          console.log('Webhook payload:', webhookPayload);
+
+          const webhookResponse = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(webhookPayload),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (webhookResponse.ok) {
+            console.log('Webhook sent successfully');
+          } else {
+            console.error('Webhook failed with status:', webhookResponse.status);
+          }
+        } catch (webhookError) {
+          clearTimeout(timeoutId);
+          if (webhookError instanceof Error && webhookError.name === 'AbortError') {
+            console.error('Webhook request timed out after 5 seconds');
+          } else {
+            console.error('Error sending webhook:', webhookError);
+          }
+          // Don't fail the appointment creation if webhook fails
+        }
+      } else {
+        console.log('WEBHOOK_URL not configured, skipping webhook');
+      }
+    }
+
     return NextResponse.json({
       ...result,
       teamName: userInfo?.teamName || "Unknown Team"

@@ -71,14 +71,7 @@ export const scheduleAppointment = mutation({
       teamId,
     });
 
-    // Webhook placeholder
-    console.log("Calling webhook for new appointment:", appointmentId);
-    try {
-      await fetch("https://google.com", { method: "POST", body: JSON.stringify(args) });
-      console.log("Webhook call successful");
-    } catch (error) {
-      console.error("Webhook call failed:", error);
-    }
+    console.log("Created new appointment:", appointmentId);
 
     return { patientId, appointmentId, newAppointment: true };
   },
