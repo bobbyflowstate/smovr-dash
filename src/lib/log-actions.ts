@@ -17,7 +17,7 @@ export const VALID_ACTIONS: readonly LogAction[] = [
 export const LOG_MESSAGES: Record<LogAction, string> = {
   [LOG_ACTIONS.FIFTEEN_LATE]: 'Patient indicated they are running 15 minutes late',
   [LOG_ACTIONS.THIRTY_LATE]: 'Patient indicated they are running 30 minutes late',
-  [LOG_ACTIONS.RESCHEDULE_CANCEL]: 'Patient requested to reschedule or cancel',
+  [LOG_ACTIONS.RESCHEDULE_CANCEL]: 'Patient visited the reschedule or cancel page',
 };
 
 export function isValidAction(action: string): action is LogAction {
