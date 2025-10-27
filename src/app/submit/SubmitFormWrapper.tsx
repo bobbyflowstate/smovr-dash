@@ -2,6 +2,10 @@ import { getLogtoContext } from '@logto/next/server-actions';
 import { logtoConfig } from '../logto';
 import SubmitForm from './SubmitForm';
 import { extractDisplayName, getUserIdentifier } from '@/lib/auth-utils';
+import { ConvexHttpClient } from 'convex/browser';
+import { api } from '../../../convex/_generated/api';
+
+const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
 export default async function SubmitFormWrapper() {
   console.log('SubmitFormWrapper: Getting Logto context...');
@@ -64,22 +68,24 @@ export default async function SubmitFormWrapper() {
     );
   }
 
-  // Get team name via authenticated API route
+  // Get team name directly from Convex
   let teamName = "Unknown Team";
   
   try {
-    const { cookies } = await import('next/headers');
-    const cookieStore = cookies();
-    
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/users`, {
-      headers: {
-        'Cookie': cookieStore.toString()
-      }
+    // Ensure user exists in Convex
+    await convex.mutation(api.users.getOrCreateUserByEmail, {
+      email: userIdentifier,
+      name,
+      logtoUserId,
     });
-    
-    if (response.ok) {
-      const userInfo = await response.json();
-      teamName = userInfo.teamName;
+
+    // Get user with team info
+    const userInfo = await convex.query(api.users.getUserWithTeam, { 
+      userEmail: userIdentifier 
+    });
+
+    if (userInfo) {
+      teamName = userInfo.teamName || "Unknown Team";
     }
   } catch (error) {
     console.error('SubmitFormWrapper: Error fetching team info:', error);

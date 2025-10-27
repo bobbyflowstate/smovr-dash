@@ -3,7 +3,11 @@ import SignIn from './sign-in';
 import SignOut from './sign-out';
 import { logtoConfig } from './logto';
 import Link from 'next/link';
-import { extractDisplayName } from '@/lib/auth-utils';
+import { extractDisplayName, getUserIdentifier } from '@/lib/auth-utils';
+import { ConvexHttpClient } from 'convex/browser';
+import { api } from '../../convex/_generated/api';
+
+const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
 export default async function Home() {
   const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
@@ -12,21 +16,28 @@ export default async function Home() {
   let userName = extractDisplayName(claims);
   let teamName: string | null = null;
   
-  if (isAuthenticated) {
+  if (isAuthenticated && claims) {
     try {
-      const { cookies } = await import('next/headers');
-      const cookieStore = cookies();
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/users`, {
-        headers: {
-          'Cookie': cookieStore.toString()
+      const userEmail = getUserIdentifier(claims);
+      const logtoUserId = claims.sub;
+
+      if (userEmail) {
+        // Ensure user exists in Convex
+        await convex.mutation(api.users.getOrCreateUserByEmail, {
+          email: userEmail,
+          name: userName,
+          logtoUserId,
+        });
+
+        // Get user with team info
+        const userInfo = await convex.query(api.users.getUserWithTeam, { 
+          userEmail 
+        });
+
+        if (userInfo) {
+          userName = userInfo.userName || userName;
+          teamName = userInfo.teamName || "Unknown Team";
         }
-      });
-      
-      if (response.ok) {
-        const userInfo = await response.json();
-        userName = userInfo.userName;
-        teamName = userInfo.teamName;
       }
     } catch (error) {
       console.error('Home: Error fetching user info:', error);
