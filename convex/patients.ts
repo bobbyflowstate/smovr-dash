@@ -1,9 +1,10 @@
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const scheduleAppointment = mutation({
   args: {
     phone: v.string(),
+    name: v.string(),
     notes: v.optional(v.string()),
     appointmentDateTime: v.string(),
     metadata: v.optional(v.object({})), // Flexible JSON metadata
@@ -36,10 +37,13 @@ export const scheduleAppointment = mutation({
 
     if (existingPatient) {
       patientId = existingPatient._id;
+      // Update the patient's name (overwrite)
+      await ctx.db.patch(patientId, { name: args.name });
     } else {
-      // Create a new patient
+      // Create a new patient with name
       patientId = await ctx.db.insert("patients", {
         phone: args.phone,
+        name: args.name,
         teamId,
       });
     }
@@ -74,5 +78,26 @@ export const scheduleAppointment = mutation({
     console.log("Created new appointment:", appointmentId);
 
     return { patientId, appointmentId, newAppointment: true };
+  },
+});
+
+// Get all patients for a team (for autocomplete)
+export const getByTeam = query({
+  args: {
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    const patients = await ctx.db
+      .query("patients")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    
+    // Only return patients that have names
+    return patients
+      .filter(p => p.name)
+      .map(p => ({
+        phone: p.phone,
+        name: p.name!,
+      }));
   },
 });

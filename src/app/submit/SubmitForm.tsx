@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
@@ -11,8 +11,14 @@ interface SubmitFormProps {
   teamName: string;
 }
 
+interface Patient {
+  phone: string;
+  name: string;
+}
+
 export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
   const [phone, setPhone] = useState<string | undefined>("");
+  const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [appointmentDateTime, setAppointmentDateTime] = useState<Date | null>(
     new Date()
@@ -21,16 +27,60 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  
+  // Autocomplete states
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [showPhoneDropdown, setShowPhoneDropdown] = useState(false);
+  const [showNameDropdown, setShowNameDropdown] = useState(false);
 
-  // No more direct Convex calls - using API routes instead
+  // Fetch patients for autocomplete on mount
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
+  const fetchPatients = async () => {
+    try {
+      const response = await fetch('/api/patients');
+      if (response.ok) {
+        const data = await response.json();
+        setPatients(data);
+      }
+    } catch (err) {
+      console.error('Error fetching patients:', err);
+    }
+  };
+
+  // Filter phone suggestions
+  const phoneMatches = phone
+    ? patients.filter(p => p.phone.includes(phone)).slice(0, 5)
+    : [];
+
+  // Filter name suggestions
+  const nameMatches = name
+    ? patients.filter(p => p.name.toLowerCase().includes(name.toLowerCase())).slice(0, 5)
+    : [];
+
+  // Select from phone dropdown -> auto-fill name
+  const selectPhone = (patient: Patient) => {
+    setPhone(patient.phone);
+    setName(patient.name);
+    setShowPhoneDropdown(false);
+  };
+
+  // Select from name dropdown -> auto-fill phone
+  const selectName = (patient: Patient) => {
+    setName(patient.name);
+    setPhone(patient.phone);
+    setShowNameDropdown(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccessMessage("");
 
-    if (!phone || !appointmentDateTime) {
-      setError("Phone number and appointment date/time are required.");
+    if (!phone || !name || !appointmentDateTime) {
+      setError("Phone number, patient name, and appointment date/time are required.");
       return;
     }
 
@@ -58,6 +108,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
         },
         body: JSON.stringify({
           phone,
+          name,
           notes,
           appointmentDateTime: appointmentDateTime.toISOString(),
           metadata: {}, // Empty metadata for now, can be extended later
@@ -79,6 +130,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
       if (result.newAppointment) {
         setSuccessMessage("New appointment scheduled successfully!");
         setPhone("");
+        setName("");
         setNotes("");
         setAppointmentDateTime(new Date());
       } else {
@@ -100,7 +152,8 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
           Submitting appointment for: <span className="font-semibold">{currentTeamName}</span>
         </p>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
+          {/* Phone Number with Autocomplete */}
+          <div className="relative">
             <label
               htmlFor="phone"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
@@ -112,11 +165,69 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                 id="phone"
                 placeholder="Enter phone number"
                 value={phone}
-                onChange={setPhone}
+                onChange={(value) => {
+                  setPhone(value);
+                  setShowPhoneDropdown(true);
+                }}
+                onFocus={() => setShowPhoneDropdown(true)}
+                onBlur={() => setTimeout(() => setShowPhoneDropdown(false), 200)}
                 defaultCountry="US"
               />
             </div>
+            {showPhoneDropdown && phoneMatches.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto">
+                {phoneMatches.map((patient, i) => (
+                  <div
+                    key={i}
+                    onClick={() => selectPhone(patient)}
+                    className="px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                  >
+                    <div className="font-medium text-gray-900 dark:text-white">{patient.phone}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">{patient.name}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Patient Name with Autocomplete */}
+          <div className="relative">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Patient Name
+            </label>
+            <input
+              type="text"
+              id="name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setShowNameDropdown(true);
+              }}
+              onFocus={() => setShowNameDropdown(true)}
+              onBlur={() => setTimeout(() => setShowNameDropdown(false), 200)}
+              required
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+              placeholder="Enter patient name"
+            />
+            {showNameDropdown && nameMatches.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto">
+                {nameMatches.map((patient, i) => (
+                  <div
+                    key={i}
+                    onClick={() => selectName(patient)}
+                    className="px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                  >
+                    <div className="font-medium text-gray-900 dark:text-white">{patient.name}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">{patient.phone}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div>
             <label
               htmlFor="appointmentDateTime"

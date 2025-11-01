@@ -17,6 +17,7 @@ export default defineSchema({
 
   patients: defineTable({
     phone: v.string(),
+    name: v.optional(v.string()),
     notes: v.optional(v.string()),
     teamId: v.id("teams"),
   })

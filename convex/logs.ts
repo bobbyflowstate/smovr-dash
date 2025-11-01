@@ -67,6 +67,7 @@ export const getLogsByTeam = query({
           action: log.action,
           message: log.message,
           patientPhone: patient?.phone || "Unknown",
+          patientName: patient?.name || "Unknown",
           appointmentDateTime: appointment?.dateTime || "Unknown",
           appointmentId: log.appointmentId,
           patientId: log.patientId,

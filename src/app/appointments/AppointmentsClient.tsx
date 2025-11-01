@@ -59,8 +59,9 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
   const filteredAppointments = appointments
     ?.filter((appointment) => {
       const patientPhone = appointment.patient?.phone || "";
+      const patientName = appointment.patient?.name || "";
       const query = searchQuery.toLowerCase();
-      return patientPhone.includes(query);
+      return patientPhone.includes(query) || patientName.toLowerCase().includes(query);
     })
     .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 
@@ -159,7 +160,8 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
                     <th className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -170,8 +172,11 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                         {format(new Date(appointment.dateTime), "p")}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                        <div className="font-medium">{appointment.patient?.name || 'N/A'}</div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                        <div className="font-medium">{appointment.patient?.phone}</div>
+                        {appointment.patient?.phone}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
                         {appointment.notes || "—"}
@@ -196,7 +201,8 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                 <div key={appointment._id} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{appointment.patient?.phone}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{appointment.patient?.name || 'N/A'}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{appointment.patient?.phone}</p>
                     </div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {format(new Date(appointment.dateTime), "p")}
