@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  APPOINTMENT_TIMEZONE,
+  formatDateTimeInAppointmentTimezone,
+  getTimezoneDisplayName,
+} from '@/lib/timezone-utils';
 
 interface Log {
   _id: string;
@@ -16,6 +21,9 @@ export default function LogsClient() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  // Get user's browser timezone for display
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
     fetchLogs();
@@ -40,7 +48,8 @@ export default function LogsClient() {
     }
   };
 
-  const formatDateTime = (isoString: string) => {
+  // Format timestamp in browser timezone (for log timestamp column)
+  const formatTimestamp = (isoString: string) => {
     const date = new Date(isoString);
     return date.toLocaleString("en-US", {
       month: "short",
@@ -174,7 +183,7 @@ export default function LogsClient() {
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Timestamp
+                    Timestamp ({browserTimezone})
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Patient Name
@@ -183,7 +192,7 @@ export default function LogsClient() {
                     Patient Phone
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Appointment
+                    Appointment ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Action
@@ -200,7 +209,7 @@ export default function LogsClient() {
                     className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
-                      {formatDateTime(log.timestamp)}
+                      {formatTimestamp(log.timestamp)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                       {log.patientName}
@@ -209,7 +218,7 @@ export default function LogsClient() {
                       {log.patientPhone}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {formatDateTime(log.appointmentDateTime)}
+                      {formatDateTimeInAppointmentTimezone(new Date(log.appointmentDateTime))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

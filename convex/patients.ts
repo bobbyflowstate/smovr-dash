@@ -81,6 +81,17 @@ export const scheduleAppointment = mutation({
   },
 });
 
+// Get patient by ID
+export const getById = query({
+  args: {
+    patientId: v.id("patients"),
+  },
+  handler: async (ctx, args) => {
+    const patient = await ctx.db.get(args.patientId);
+    return patient;
+  },
+});
+
 // Get all patients for a team (for autocomplete)
 export const getByTeam = query({
   args: {

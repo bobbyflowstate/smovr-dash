@@ -5,6 +5,14 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
+import {
+  APPOINTMENT_TIMEZONE,
+  extractComponentsInTimezone,
+  convertToTimezoneDisplayDate,
+  convertFromTimezoneDisplayDate,
+  getTimezoneDisplayName,
+  formatFullDateTimeInAppointmentTimezone,
+} from '@/lib/timezone-utils';
 
 interface SubmitFormProps {
   userName: string;
@@ -20,7 +28,8 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
   const [phone, setPhone] = useState<string | undefined>("");
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
-  const [appointmentDateTime, setAppointmentDateTime] = useState<Date | null>(
+  // Store the actual UTC Date object
+  const [appointmentDateTimeUTC, setAppointmentDateTimeUTC] = useState<Date | null>(
     new Date()
   );
   const [currentTeamName, setCurrentTeamName] = useState<string>(teamName);
@@ -32,6 +41,22 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [showPhoneDropdown, setShowPhoneDropdown] = useState(false);
   const [showNameDropdown, setShowNameDropdown] = useState(false);
+
+  // Convert UTC date to display date (shows appointment timezone in DatePicker)
+  const appointmentDateTime = appointmentDateTimeUTC 
+    ? convertToTimezoneDisplayDate(appointmentDateTimeUTC, APPOINTMENT_TIMEZONE)
+    : null;
+  
+  // Handle DatePicker change - convert from display date back to UTC
+  const handleDateChange = (date: Date | null) => {
+    if (!date) {
+      setAppointmentDateTimeUTC(null);
+      return;
+    }
+    // Convert the selected date (which represents appointment timezone time) back to UTC
+    const utcDate = convertFromTimezoneDisplayDate(date, APPOINTMENT_TIMEZONE);
+    setAppointmentDateTimeUTC(utcDate);
+  };
 
   // Fetch patients for autocomplete on mount
   useEffect(() => {
@@ -79,12 +104,12 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
     setError("");
     setSuccessMessage("");
 
-    if (!phone || !name || !appointmentDateTime) {
+    if (!phone || !name || !appointmentDateTimeUTC) {
       setError("Phone number, patient name, and appointment date/time are required.");
       return;
     }
 
-    if (appointmentDateTime < new Date()) {
+    if (appointmentDateTimeUTC < new Date()) {
       setError("Cannot schedule an appointment in the past.");
       return;
     }
@@ -101,6 +126,17 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
 
       // 🔒 Create appointment via authenticated API route
       console.log('SubmitForm: Creating appointment...');
+      
+      // Extract time components as they appear in the backend's configured timezone
+      // This ensures the frontend and backend are aligned on what time is being scheduled
+      const timezoneComponents = extractComponentsInTimezone(appointmentDateTimeUTC, APPOINTMENT_TIMEZONE);
+      
+      console.log('SubmitForm: Extracted timezone components:', {
+        timezone: APPOINTMENT_TIMEZONE,
+        components: timezoneComponents,
+        originalDate: appointmentDateTimeUTC.toISOString()
+      });
+      
       const appointmentResponse = await fetch('/api/appointments', {
         method: 'POST',
         headers: {
@@ -110,7 +146,15 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
           phone,
           name,
           notes,
-          appointmentDateTime: appointmentDateTime.toISOString(),
+          appointmentDateTime: appointmentDateTimeUTC.toISOString(), // Keep for backward compat
+          appointmentDateTimeLocal: {
+            year: timezoneComponents.year,
+            month: timezoneComponents.month,
+            day: timezoneComponents.day,
+            hour: timezoneComponents.hour,
+            minute: timezoneComponents.minute,
+            second: timezoneComponents.second,
+          },
           metadata: {}, // Empty metadata for now, can be extended later
         }),
       });
@@ -132,7 +176,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
         setPhone("");
         setName("");
         setNotes("");
-        setAppointmentDateTime(new Date());
+        setAppointmentDateTimeUTC(new Date());
       } else {
         setError("This appointment already exists for this patient.");
       }
@@ -239,12 +283,25 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
               <DatePicker
                 id="appointmentDateTime"
                 selected={appointmentDateTime}
-                onChange={(date) => setAppointmentDateTime(date)}
+                onChange={handleDateChange}
                 showTimeSelect
                 dateFormat="Pp"
-                minDate={new Date()}
+                minDate={convertToTimezoneDisplayDate(new Date(), APPOINTMENT_TIMEZONE)}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
               />
+            </div>
+            <div className="mt-2 space-y-1">
+              {appointmentDateTimeUTC && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Selected time:</span>
+                  <span className="text-sm font-mono text-gray-900 dark:text-gray-100">
+                    {formatFullDateTimeInAppointmentTimezone(appointmentDateTimeUTC)}
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-700">
+                    {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <div>

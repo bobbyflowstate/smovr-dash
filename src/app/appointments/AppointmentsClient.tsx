@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { format } from "date-fns";
 import Link from "next/link";
 import { Id } from "../../../convex/_generated/dataModel";
+import {
+  APPOINTMENT_TIMEZONE,
+  formatTimeInAppointmentTimezone,
+  formatFullDateInAppointmentTimezone,
+  getTimezoneDisplayName,
+} from '@/lib/timezone-utils';
 
 interface AppointmentsClientProps {
   userName: string;
@@ -58,6 +63,14 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
 
   const filteredAppointments = appointments
     ?.filter((appointment) => {
+      // Filter out past appointments
+      const appointmentDate = new Date(appointment.dateTime);
+      const now = new Date();
+      if (appointmentDate < now) {
+        return false;
+      }
+      
+      // Apply search filter
       const patientPhone = appointment.patient?.phone || "";
       const patientName = appointment.patient?.name || "";
       const query = searchQuery.toLowerCase();
@@ -66,7 +79,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
     .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 
   const groupedAppointments = filteredAppointments?.reduce((acc, appointment) => {
-    const date = format(new Date(appointment.dateTime), "PPPP");
+    const date = formatFullDateInAppointmentTimezone(new Date(appointment.dateTime));
     if (!acc[date]) {
       acc[date] = [];
     }
@@ -152,6 +165,9 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
           <div key={date} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-colors overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{date}</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Times shown in {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}
+              </p>
             </div>
             
             {/* Desktop Table View */}
@@ -159,7 +175,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
               <table className="min-w-full">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
@@ -170,7 +186,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                   {(appointmentsForDay as any[]).map((appointment: any) => (
                     <tr key={appointment._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                        {format(new Date(appointment.dateTime), "p")}
+                        {formatTimeInAppointmentTimezone(new Date(appointment.dateTime))}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                         <div className="font-medium">{appointment.patient?.name || 'N/A'}</div>
@@ -205,7 +221,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                       <p className="text-sm text-gray-600 dark:text-gray-400">{appointment.patient?.phone}</p>
                     </div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {format(new Date(appointment.dateTime), "p")}
+                      {formatTimeInAppointmentTimezone(new Date(appointment.dateTime))}
                     </p>
                   </div>
                   {appointment.notes && (
