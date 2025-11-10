@@ -9,9 +9,9 @@ When a new appointment is created, the system sends a POST request to a configur
 Add the following to your `.env.local` file:
 
 ```bash
-# Webhook URL - Required
+# Schedule Webhook URL - Required
 # This endpoint will receive POST requests when appointments are created
-WEBHOOK_URL=https://your-webhook-endpoint.com/webhook
+SCHEDULE_WEBHOOK_URL=https://your-webhook-endpoint.com/webhook
 
 # Base URL - Required for webhook payload URLs
 # Should match your deployed application URL
@@ -20,7 +20,7 @@ NEXT_PUBLIC_BASE_URL=https://your-app-domain.com
 
 ## Webhook Payload Format
 
-When a new appointment is created, a POST request is sent to `WEBHOOK_URL` with the following JSON payload:
+When a new appointment is created, a POST request is sent to `SCHEDULE_WEBHOOK_URL` with the following JSON payload:
 
 ```json
 {
@@ -62,7 +62,7 @@ Logs are automatically filtered by team - users only see logs for appointments i
 
 To test the webhook integration:
 
-1. Set `WEBHOOK_URL` in your `.env.local`
+1. Set `SCHEDULE_WEBHOOK_URL` in your `.env.local`
 2. Create a new appointment via the Submit form
 3. Check your webhook endpoint to verify it received the payload
 4. Visit one of the patient response URLs
@@ -73,5 +73,5 @@ To test the webhook integration:
 - Patient response pages are **public** (no authentication required)
 - Webhook failures do not prevent appointment creation
 - All webhook errors are logged to the console
-- If `WEBHOOK_URL` is not set, webhooks are skipped silently
+- If `SCHEDULE_WEBHOOK_URL` is not set, webhooks are skipped silently
 

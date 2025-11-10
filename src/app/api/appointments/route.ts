@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     // 🔗 Send webhook if new appointment was created
     if (result.newAppointment && result.appointmentId) {
-      const webhookUrl = process.env.WEBHOOK_URL;
+      const webhookUrl = process.env.SCHEDULE_WEBHOOK_URL;
       
       if (webhookUrl) {
         // Create abort controller for 5 second timeout
@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
           // Don't fail the appointment creation if webhook fails
         }
       } else {
-        console.log('WEBHOOK_URL not configured, skipping webhook');
+        console.log('SCHEDULE_WEBHOOK_URL not configured, skipping webhook');
       }
     }
 
