@@ -30,7 +30,21 @@ export default defineSchema({
     notes: v.optional(v.string()),
     metadata: v.optional(v.object({})), // Flexible JSON metadata
     teamId: v.id("teams"),
-  }).index("by_team", ["teamId"]),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_dateTime", ["dateTime"]),
+
+  reminders: defineTable({
+    appointmentId: v.optional(v.id("appointments")), // null for patient reminders like birthdays
+    patientId: v.id("patients"),
+    reminderType: v.string(), // "24h", "1h", "birthday", etc.
+    targetDate: v.string(), // ISO date string for what the reminder is for
+    sentAt: v.string(), // ISO timestamp when reminder was sent
+    teamId: v.id("teams"),
+  })
+    .index("by_appointment_type", ["appointmentId", "reminderType"])
+    .index("by_patient_type_date", ["patientId", "reminderType", "targetDate"])
+    .index("by_team", ["teamId"]),
 
   logs: defineTable({
     appointmentId: v.id("appointments"),

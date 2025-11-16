@@ -13,6 +13,7 @@ import {
   getTimezoneDisplayName,
   formatFullDateTimeInAppointmentTimezone,
 } from '@/lib/timezone-utils';
+import { Id } from '../../../convex/_generated/dataModel';
 
 interface SubmitFormProps {
   userName: string;
@@ -22,6 +23,15 @@ interface SubmitFormProps {
 interface Patient {
   phone: string;
   name: string;
+}
+
+interface ExistingAppointment {
+  id: Id<"appointments">;
+  dateTime: string;
+  patient: {
+    name: string | null;
+    phone: string;
+  };
 }
 
 export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
@@ -41,6 +51,16 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [showPhoneDropdown, setShowPhoneDropdown] = useState(false);
   const [showNameDropdown, setShowNameDropdown] = useState(false);
+  
+  // Confirmation dialog states
+  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
+  const [existingAppointment, setExistingAppointment] = useState<ExistingAppointment | null>(null);
+  const [pendingAppointmentData, setPendingAppointmentData] = useState<{
+    phone: string;
+    name: string;
+    notes: string;
+    appointmentDateTimeUTC: Date;
+  } | null>(null);
 
   // Convert UTC date to display date (shows appointment timezone in DatePicker)
   const appointmentDateTime = appointmentDateTimeUTC 
@@ -99,11 +119,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
     setShowNameDropdown(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSuccessMessage("");
-
+  const scheduleAppointment = async (skipExistingCheck: boolean = false) => {
     if (!phone || !name || !appointmentDateTimeUTC) {
       setError("Phone number, patient name, and appointment date/time are required.");
       return;
@@ -124,18 +140,8 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
     try {
       console.log('SubmitForm: Submitting appointment for user:', userName);
 
-      // 🔒 Create appointment via authenticated API route
-      console.log('SubmitForm: Creating appointment...');
-      
       // Extract time components as they appear in the backend's configured timezone
-      // This ensures the frontend and backend are aligned on what time is being scheduled
       const timezoneComponents = extractComponentsInTimezone(appointmentDateTimeUTC, APPOINTMENT_TIMEZONE);
-      
-      console.log('SubmitForm: Extracted timezone components:', {
-        timezone: APPOINTMENT_TIMEZONE,
-        components: timezoneComponents,
-        originalDate: appointmentDateTimeUTC.toISOString()
-      });
       
       const appointmentResponse = await fetch('/api/appointments', {
         method: 'POST',
@@ -146,7 +152,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
           phone,
           name,
           notes,
-          appointmentDateTime: appointmentDateTimeUTC.toISOString(), // Keep for backward compat
+          appointmentDateTime: appointmentDateTimeUTC.toISOString(),
           appointmentDateTimeLocal: {
             year: timezoneComponents.year,
             month: timezoneComponents.month,
@@ -155,7 +161,8 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
             minute: timezoneComponents.minute,
             second: timezoneComponents.second,
           },
-          metadata: {}, // Empty metadata for now, can be extended later
+          metadata: {},
+          skipExistingCheck,
         }),
       });
 
@@ -165,6 +172,20 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
       }
 
       const result = await appointmentResponse.json();
+
+      // Check if confirmation is required
+      if (result.requiresConfirmation && result.existingAppointment) {
+        setExistingAppointment(result.existingAppointment);
+        setPendingAppointmentData({
+          phone,
+          name,
+          notes,
+          appointmentDateTimeUTC,
+        });
+        setShowConfirmationDialog(true);
+        setIsSubmitting(false);
+        return;
+      }
 
       // Update team name if provided
       if (result.teamName) {
@@ -186,6 +207,67 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    await scheduleAppointment(false);
+  };
+
+  const handleConfirmCancelAndSchedule = async () => {
+    if (!existingAppointment || !pendingAppointmentData) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setShowConfirmationDialog(false);
+
+    // Store current form state temporarily
+    const savedPhone = phone;
+    const savedName = name;
+    const savedNotes = notes;
+    const savedDateTime = appointmentDateTimeUTC;
+
+    // Restore pending appointment data to form state
+    setPhone(pendingAppointmentData.phone);
+    setName(pendingAppointmentData.name);
+    setNotes(pendingAppointmentData.notes);
+    setAppointmentDateTimeUTC(pendingAppointmentData.appointmentDateTimeUTC);
+
+    try {
+      // First, cancel the existing appointment
+      console.log('SubmitForm: Canceling existing appointment:', existingAppointment.id);
+      const cancelResponse = await fetch(`/api/appointments/${existingAppointment.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!cancelResponse.ok) {
+        const errorData = await cancelResponse.json();
+        throw new Error(errorData.error || 'Failed to cancel existing appointment');
+      }
+
+      // Then, schedule the new appointment (skip the existing check since we just canceled it)
+      console.log('SubmitForm: Scheduling new appointment after cancellation');
+      await scheduleAppointment(true);
+    } catch (err) {
+      // Restore original form state on error
+      setPhone(savedPhone);
+      setName(savedName);
+      setNotes(savedNotes);
+      setAppointmentDateTimeUTC(savedDateTime);
+      setError("Failed to cancel existing appointment and schedule new one. Please try again.");
+      console.error('SubmitForm: Error:', err);
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelConfirmation = () => {
+    setShowConfirmationDialog(false);
+    setExistingAppointment(null);
+    setPendingAppointmentData(null);
+    setIsSubmitting(false);
   };
 
   return (
@@ -340,6 +422,67 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
           </div>
         </form>
       </div>
+
+      {/* Confirmation Dialog */}
+      {showConfirmationDialog && existingAppointment && pendingAppointmentData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-md w-full mx-4 border border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+              Existing Appointment Found
+            </h2>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              This patient already has a scheduled appointment. Scheduling a new appointment will cancel the existing one.
+            </p>
+            
+            <div className="space-y-3 mb-6">
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1">
+                  Existing Appointment:
+                </p>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  {existingAppointment.patient.name && (
+                    <span className="font-semibold">{existingAppointment.patient.name}</span>
+                  )}
+                  {existingAppointment.patient.name && ' - '}
+                  {existingAppointment.patient.phone}
+                </p>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                  {formatFullDateTimeInAppointmentTimezone(new Date(existingAppointment.dateTime))}
+                </p>
+              </div>
+              
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">
+                  New Appointment:
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  {pendingAppointmentData.name} - {pendingAppointmentData.phone}
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                  {formatFullDateTimeInAppointmentTimezone(pendingAppointmentData.appointmentDateTimeUTC)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelConfirmation}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmCancelAndSchedule}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? "Processing..." : "Cancel Old & Schedule New"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

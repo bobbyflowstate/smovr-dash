@@ -57,6 +57,73 @@ export const getById = query({
   },
 });
 
+export const getExistingForPatient = query({
+  args: {
+    phone: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    console.log("appointments.getExistingForPatient: Checking for existing appointments for phone:", args.phone);
+
+    // Look up the user by their email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+
+    if (!user) {
+      console.log("appointments.getExistingForPatient: User not found in database");
+      return null;
+    }
+
+    const teamId = user.teamId;
+
+    // Find patient by phone number in this team
+    const patient = await ctx.db
+      .query("patients")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .filter((q) => q.eq(q.field("phone"), args.phone))
+      .first();
+
+    if (!patient) {
+      // No patient found, so no existing appointments
+      return null;
+    }
+
+    // Get current time to filter for future appointments only
+    const now = new Date().toISOString();
+
+    // Find future appointments for this patient
+    const existingAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("patientId"), patient._id),
+          q.gte(q.field("dateTime"), now)
+        )
+      )
+      .collect();
+
+    // Return the first (most immediate) future appointment if any
+    if (existingAppointments.length === 0) {
+      return null;
+    }
+
+    // Sort by dateTime ascending to get the earliest future appointment
+    existingAppointments.sort((a, b) => 
+      new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
+    );
+
+    const appointment = existingAppointments[0];
+    
+    return {
+      ...appointment,
+      patient,
+    };
+  },
+});
+
 export const cancel = mutation({
   args: { 
     id: v.id("appointments"),
