@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { formatAppointmentDateTime } from "./webhook-utils";
+import { formatAppointmentDateTime } from "./webhook_utils";
 
 // Get timezone from environment variable
 const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
