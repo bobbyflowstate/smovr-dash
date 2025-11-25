@@ -68,10 +68,13 @@ export default function ThirtyMinutesLatePage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Processing...
+              Processing... / Procesando...
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Please wait while we record your status.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              Por favor espere mientras registramos su estado.
             </p>
           </>
         )}
@@ -94,13 +97,19 @@ export default function ThirtyMinutesLatePage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              No worries!
+              No worries! / ¡No se preocupe!
             </h1>
             <p className="text-lg text-gray-700 dark:text-gray-300 mb-2">
               We'll be waiting for you.
             </p>
+            <p className="text-lg text-gray-700 dark:text-gray-300 mb-2">
+              Lo estaremos esperando.
+            </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Your provider has been notified that you're running 30 minutes late.
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              Su proveedor ha sido notificado de que llegará 30 minutos tarde.
             </p>
           </>
         )}
@@ -123,10 +132,13 @@ export default function ThirtyMinutesLatePage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Something went wrong
+              Something went wrong / Algo salió mal
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
+            <p className="text-gray-600 dark:text-gray-400 mb-2">
               {errorMessage || "Unable to process your request. Please contact your provider."}
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              {errorMessage || "No se pudo procesar su solicitud. Por favor contacte a su proveedor."}
             </p>
           </>
         )}

@@ -68,10 +68,13 @@ export default function RescheduleCancelPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Processing...
+              Processing... / Procesando...
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Please wait while we record your request.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              Por favor espere mientras registramos su solicitud.
             </p>
           </>
         )}
@@ -94,10 +97,13 @@ export default function RescheduleCancelPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Need to Reschedule?
+              Need to Reschedule? / ¿Necesita reprogramar?
             </h1>
-            <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
+            <p className="text-lg text-gray-700 dark:text-gray-300 mb-2">
               Please call us at
+            </p>
+            <p className="text-lg text-gray-700 dark:text-gray-300 mb-6">
+              Por favor llámenos al
             </p>
             <a
               href="tel:+15551234567"
@@ -107,6 +113,9 @@ export default function RescheduleCancelPage() {
             </a>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Your provider has been notified of your request to reschedule or cancel.
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              Su proveedor ha sido notificado de su solicitud para reprogramar o cancelar.
             </p>
           </>
         )}
@@ -129,13 +138,19 @@ export default function RescheduleCancelPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Something went wrong
+              Something went wrong / Algo salió mal
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
+            <p className="text-gray-600 dark:text-gray-400 mb-2">
               {errorMessage || "Unable to process your request."}
             </p>
-            <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              {errorMessage || "No se pudo procesar su solicitud."}
+            </p>
+            <p className="text-lg text-gray-700 dark:text-gray-300 mb-2">
               Please call us at
+            </p>
+            <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
+              Por favor llámenos al
             </p>
             <a
               href="tel:+15551234567"
