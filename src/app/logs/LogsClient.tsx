@@ -48,8 +48,18 @@ export default function LogsClient() {
     }
   };
 
+  // Check if a date string is valid
+  const isValidDate = (dateString: string | null | undefined): boolean => {
+    if (!dateString || dateString === "Unknown") return false;
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+  };
+
   // Format timestamp in browser timezone (for log timestamp column)
   const formatTimestamp = (isoString: string) => {
+    if (!isValidDate(isoString)) {
+      return "Invalid date";
+    }
     const date = new Date(isoString);
     return date.toLocaleString("en-US", {
       month: "short",
@@ -218,7 +228,9 @@ export default function LogsClient() {
                       {log.patientPhone}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {formatDateTimeInAppointmentTimezone(new Date(log.appointmentDateTime))}
+                      {isValidDate(log.appointmentDateTime) 
+                        ? formatDateTimeInAppointmentTimezone(new Date(log.appointmentDateTime))
+                        : log.appointmentDateTime || "Unknown"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

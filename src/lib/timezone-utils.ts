@@ -171,6 +171,10 @@ export function formatFullDateInAppointmentTimezone(date: Date): string {
  * Format date/time in appointment timezone (e.g., "Jan 15, 2024, 2:00 PM")
  */
 export function formatDateTimeInAppointmentTimezone(date: Date): string {
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    return 'Invalid date';
+  }
   return formatInTimezone(date, APPOINTMENT_TIMEZONE, {
     month: 'short',
     day: 'numeric',
