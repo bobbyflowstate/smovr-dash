@@ -8,7 +8,7 @@ import ConditionalLayout from "@/components/ConditionalLayout";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AZ Medical",
+  title: "AZ Integrated Medical (Yuma)",
   description: "Secure healthcare data management platform",
 };
 
