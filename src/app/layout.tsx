@@ -8,8 +8,8 @@ import ConditionalLayout from "@/components/ConditionalLayout";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Smovr Dash",
-  description: "Patient Information Dashboard",
+  title: "AZ Medical",
+  description: "Secure healthcare data management platform",
 };
 
 export default function RootLayout({

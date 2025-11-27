@@ -126,7 +126,7 @@ export default async function Home() {
                 </svg>
               </div>
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-                Welcome to SMOVR
+                Welcome to AZ Medical
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
                 Secure healthcare data management platform
