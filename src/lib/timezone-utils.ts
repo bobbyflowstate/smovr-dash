@@ -118,6 +118,11 @@ export function convertFromTimezoneDisplayDate(localDate: Date, timezone: string
  */
 export function getTimezoneDisplayName(timezone: string): string {
   try {
+    // Special handling for Arizona timezones (they don't observe DST)
+    if (timezone === 'America/Phoenix' || timezone === 'America/Arizona') {
+      return 'Arizona Time';
+    }
+    
     // Use Intl.DateTimeFormat to get the long timezone name
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
