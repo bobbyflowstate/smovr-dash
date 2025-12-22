@@ -7,7 +7,10 @@ import { formatAppointmentDateTime } from "./webhook_utils";
 // Get timezone from environment variable
 const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
 const HOSPITAL_ADDRESS = process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+// Use BASE_URL (not NEXT_PUBLIC_BASE_URL) since Convex doesn't have access to Next.js env vars
+// This must be set in Convex dashboard environment variables
+// Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
+const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
 
 // Reminder window constants (in hours before appointment)
 // Wider windows ensure reminders aren't missed due to cron timing
@@ -97,6 +100,11 @@ async function sendReminder24hWebhook(
     return;
   }
 
+  if (!BASE_URL) {
+    console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+    return;
+  }
+
   try {
     const { appointmentDateStr, appointmentTimeStr, appointmentDateTimeStr } = 
       formatAppointmentDateTime(appointmentDate, APPOINTMENT_TIMEZONE);
@@ -137,6 +145,11 @@ async function sendReminder1hWebhook(
   
   if (!webhookUrl) {
     console.log('WEBHOOK_SMS_REMINDER_1H not configured, skipping 1h reminder webhook');
+    return;
+  }
+
+  if (!BASE_URL) {
+    console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
     return;
   }
 

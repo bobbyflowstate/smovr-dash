@@ -20,6 +20,8 @@ CANCEL_WEBHOOK_URL=https://your-webhook-endpoint.com/webhook
 
 # Base URL - Required for webhook payload URLs
 # Should match your deployed application URL
+# NOTE: This must also be set in Convex dashboard as BASE_URL (without NEXT_PUBLIC_ prefix)
+# Convex reminder webhooks run in a separate environment and need BASE_URL set there
 NEXT_PUBLIC_BASE_URL=https://your-app-domain.com
 
 # Reminder Webhook URLs - Optional
@@ -183,6 +185,32 @@ If `SMS_QUIET_HOURS_START` and `SMS_QUIET_HOURS_END` are configured, reminder we
 - Quiet hours can span midnight (e.g., 22-8 means 10 PM to 8 AM)
 - **Important**: If invalid values are provided (outside 0-23 range), reminder checks will be skipped entirely and no reminders will be sent until the configuration is fixed
 
+## Convex Environment Variables
+
+**IMPORTANT**: Reminder webhooks run in Convex cron jobs, which have a separate environment from Next.js. You must set the following environment variables in your **Convex dashboard**:
+
+1. Go to your Convex dashboard → Settings → Environment Variables
+2. Add the following variables:
+
+```bash
+# Base URL - REQUIRED for SMS notification links
+# This must match your production domain (e.g., https://your-app-domain.com)
+# Without this, users will receive localhost links in SMS notifications!
+BASE_URL=https://your-app-domain.com
+
+# Reminder webhook URLs (same as Next.js env vars)
+WEBHOOK_SMS_REMINDER_24H=https://your-webhook-endpoint.com/reminder-24h
+WEBHOOK_SMS_REMINDER_1H=https://your-webhook-endpoint.com/reminder-1h
+
+# Optional: Quiet hours and timezone
+SMS_QUIET_HOURS_START=22
+SMS_QUIET_HOURS_END=8
+APPOINTMENT_TIMEZONE=America/Los_Angeles
+HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
+```
+
+**Critical**: If `BASE_URL` is not set in Convex, reminder webhooks will fail with an error and no SMS notifications will be sent. This prevents accidentally sending localhost links to users.
+
 ## Notes
 
 - Patient response pages are **public** (no authentication required)
@@ -191,6 +219,7 @@ If `SMS_QUIET_HOURS_START` and `SMS_QUIET_HOURS_END` are configured, reminder we
 - If `SCHEDULE_WEBHOOK_URL` is not set, schedule webhooks are skipped silently
 - If `CANCEL_WEBHOOK_URL` is not set, cancel webhooks will be sent to `SCHEDULE_WEBHOOK_URL` if configured
 - If `WEBHOOK_SMS_REMINDER_24H` or `WEBHOOK_SMS_REMINDER_1H` are not set, reminder webhooks are skipped silently
+- **If `BASE_URL` is not set in Convex dashboard, reminder webhooks will fail** - this prevents sending localhost links
 - Webhook requests have a 10-second timeout
 - Only future appointments are considered when checking for existing appointments
 - Reminder webhooks are sent via hourly cron jobs, not immediately when appointments are created
