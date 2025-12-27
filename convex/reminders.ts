@@ -2,9 +2,9 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { formatAppointmentDateTime } from "./webhook_utils";
+import { sendSMSWebhook, formatReminder24hMessage, formatReminder1hMessage } from "./webhook_utils";
 
-// Get timezone from environment variable
+// Get timezone and hospital address from environment variables
 const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
 const HOSPITAL_ADDRESS = process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
 // Use BASE_URL (not NEXT_PUBLIC_BASE_URL) since Convex doesn't have access to Next.js env vars
@@ -19,164 +19,76 @@ const REMINDER_24H_WINDOW_END = 25;   // Stop checking 25 hours before (wider wi
 const REMINDER_1H_WINDOW_START = 0.5; // Start checking 30 minutes before
 const REMINDER_1H_WINDOW_END = 2;     // Stop checking 2 hours before (wider window: 0.5-2h)
 
-// Webhook timeout constant (in milliseconds)
-const WEBHOOK_TIMEOUT_MS = 10000; // 10 seconds
 
 // Reminder type constants for type safety
 export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
 
-interface WebhookPayload {
-  appointment_id: string;
-  patient_name: string | null;
-  patient_phone: string;
-  appointment_date: string;
-  appointment_time: string;
-  appointment_datetime: string;
-  hospital_address: string;
-  action: string;
-  response_urls?: {
-    "15_min_late": string;
-    "30_min_late": string;
-    "reschedule_cancel": string;
-  };
-}
-
-/**
- * Sends a webhook request with timeout and error handling
- */
-async function sendWebhookRequest(
-  webhookUrl: string,
-  payload: WebhookPayload
-): Promise<void> {
-  // Create abort controller for webhook timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-
-  try {
-    console.log('Sending reminder webhook to:', webhookUrl);
-    console.log('Webhook payload:', payload);
-
-    const webhookResponse = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (webhookResponse.ok) {
-      console.log('Reminder webhook sent successfully');
-    } else {
-      console.error('Reminder webhook failed with status:', webhookResponse.status);
-    }
-  } catch (webhookError) {
-    clearTimeout(timeoutId);
-    if (webhookError instanceof Error && webhookError.name === 'AbortError') {
-      console.error(`Reminder webhook request timed out after ${WEBHOOK_TIMEOUT_MS / 1000} seconds`);
-    } else {
-      console.error('Error sending reminder webhook:', webhookError);
-    }
-    // Don't throw - webhook failures shouldn't fail the operation
-  }
-}
-
 /**
  * Sends a 24h reminder webhook
+ * @returns true if webhook was sent successfully, false otherwise
  */
 async function sendReminder24hWebhook(
   appointmentId: Id<"appointments">,
   patientName: string | null,
   patientPhone: string,
   appointmentDate: Date
-): Promise<void> {
-  const webhookUrl = process.env.WEBHOOK_SMS_REMINDER_24H;
-  
-  if (!webhookUrl) {
-    console.log('WEBHOOK_SMS_REMINDER_24H not configured, skipping 24h reminder webhook');
-    return;
-  }
-
+): Promise<boolean> {
   if (!BASE_URL) {
     console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
-    return;
+    return false;
   }
 
   try {
-    const { appointmentDateStr, appointmentTimeStr, appointmentDateTimeStr } = 
-      formatAppointmentDateTime(appointmentDate, APPOINTMENT_TIMEZONE);
+    // Format message
+    const message = formatReminder24hMessage(
+      patientName,
+      appointmentDate,
+      appointmentId,
+      BASE_URL,
+      APPOINTMENT_TIMEZONE,
+      HOSPITAL_ADDRESS
+    );
     
-    const webhookPayload: WebhookPayload = {
-      appointment_id: appointmentId,
-      patient_name: patientName,
-      patient_phone: patientPhone,
-      appointment_date: appointmentDateStr,
-      appointment_time: appointmentTimeStr,
-      appointment_datetime: appointmentDateTimeStr,
-      hospital_address: HOSPITAL_ADDRESS,
-      action: "reminder_24h",
-      response_urls: {
-        "15_min_late": `${BASE_URL}/15-late/${appointmentId}`,
-        "30_min_late": `${BASE_URL}/30-late/${appointmentId}`,
-        "reschedule_cancel": `${BASE_URL}/reschedule-cancel/${appointmentId}`
-      }
-    };
-
-    await sendWebhookRequest(webhookUrl, webhookPayload);
+    // Send SMS webhook and return success status
+    return await sendSMSWebhook(patientPhone, message);
   } catch (error) {
     console.error('Error preparing 24h reminder webhook:', error);
-    // Don't throw - webhook failures shouldn't fail the operation
+    return false;
   }
 }
 
 /**
  * Sends a 1h reminder webhook
+ * @returns true if webhook was sent successfully, false otherwise
  */
 async function sendReminder1hWebhook(
   appointmentId: Id<"appointments">,
   patientName: string | null,
   patientPhone: string,
   appointmentDate: Date
-): Promise<void> {
-  const webhookUrl = process.env.WEBHOOK_SMS_REMINDER_1H;
-  
-  if (!webhookUrl) {
-    console.log('WEBHOOK_SMS_REMINDER_1H not configured, skipping 1h reminder webhook');
-    return;
-  }
-
+): Promise<boolean> {
   if (!BASE_URL) {
     console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
-    return;
+    return false;
   }
 
   try {
-    const { appointmentDateStr, appointmentTimeStr, appointmentDateTimeStr } = 
-      formatAppointmentDateTime(appointmentDate, APPOINTMENT_TIMEZONE);
+    // Format message
+    const message = formatReminder1hMessage(
+      patientName,
+      appointmentDate,
+      appointmentId,
+      BASE_URL,
+      APPOINTMENT_TIMEZONE,
+      HOSPITAL_ADDRESS
+    );
     
-    const webhookPayload: WebhookPayload = {
-      appointment_id: appointmentId,
-      patient_name: patientName,
-      patient_phone: patientPhone,
-      appointment_date: appointmentDateStr,
-      appointment_time: appointmentTimeStr,
-      appointment_datetime: appointmentDateTimeStr,
-      hospital_address: HOSPITAL_ADDRESS,
-      action: "reminder_1h",
-      response_urls: {
-        "15_min_late": `${BASE_URL}/15-late/${appointmentId}`,
-        "30_min_late": `${BASE_URL}/30-late/${appointmentId}`,
-        "reschedule_cancel": `${BASE_URL}/reschedule-cancel/${appointmentId}`
-      }
-    };
-
-    await sendWebhookRequest(webhookUrl, webhookPayload);
+    // Send SMS webhook and return success status
+    return await sendSMSWebhook(patientPhone, message);
   } catch (error) {
     console.error('Error preparing 1h reminder webhook:', error);
-    // Don't throw - webhook failures shouldn't fail the operation
+    return false;
   }
 }
 
@@ -288,20 +200,16 @@ export const checkAndSendReminders = internalAction({
             });
 
             if (patient) {
-              // Check webhook configuration before attempting to send
-              const webhookUrl = process.env.WEBHOOK_SMS_REMINDER_24H;
-              if (!webhookUrl) {
-                console.log(`WEBHOOK_SMS_REMINDER_24H not configured, skipping 24h reminder webhook for appointment ${appointment._id}`);
-              } else {
-                console.log(`Sending 24h reminder for appointment ${appointment._id}`);
-                await sendReminder24hWebhook(
-                  appointment._id,
-                  patient.name || null,
-                  patient.phone,
-                  appointmentDate
-                );
+              console.log(`Sending 24h reminder for appointment ${appointment._id}`);
+              const success = await sendReminder24hWebhook(
+                appointment._id,
+                patient.name || null,
+                patient.phone,
+                appointmentDate
+              );
 
-                // Record reminder sent
+              // Only record reminder if it was sent successfully
+              if (success) {
                 await ctx.runMutation(internal.reminders.recordReminderSent, {
                   appointmentId: appointment._id,
                   patientId: appointment.patientId,
@@ -332,20 +240,16 @@ export const checkAndSendReminders = internalAction({
             });
 
             if (patient) {
-              // Check webhook configuration before attempting to send
-              const webhookUrl = process.env.WEBHOOK_SMS_REMINDER_1H;
-              if (!webhookUrl) {
-                console.log(`WEBHOOK_SMS_REMINDER_1H not configured, skipping 1h reminder webhook for appointment ${appointment._id}`);
-              } else {
-                console.log(`Sending 1h reminder for appointment ${appointment._id}`);
-                await sendReminder1hWebhook(
-                  appointment._id,
-                  patient.name || null,
-                  patient.phone,
-                  appointmentDate
-                );
+              console.log(`Sending 1h reminder for appointment ${appointment._id}`);
+              const success = await sendReminder1hWebhook(
+                appointment._id,
+                patient.name || null,
+                patient.phone,
+                appointmentDate
+              );
 
-                // Record reminder sent
+              // Only record reminder if it was sent successfully
+              if (success) {
                 await ctx.runMutation(internal.reminders.recordReminderSent, {
                   appointmentId: appointment._id,
                   patientId: appointment.patientId,
@@ -463,20 +367,16 @@ export const testCheckReminders = internalAction({
               });
 
               if (patient) {
-                // Check webhook configuration before attempting to send
-                const webhookUrl = process.env.WEBHOOK_SMS_REMINDER_24H;
-                if (!webhookUrl) {
-                  console.log(`TEST: ⚠️ WEBHOOK_SMS_REMINDER_24H not configured, skipping 24h reminder webhook`);
-                } else {
-                  console.log(`TEST: 📤 Sending 24h reminder for appointment ${appointment._id} to ${patient.phone}`);
-                  await sendReminder24hWebhook(
-                    appointment._id,
-                    patient.name || null,
-                    patient.phone,
-                    appointmentDate
-                  );
+                console.log(`TEST: 📤 Sending 24h reminder for appointment ${appointment._id} to ${patient.phone}`);
+                const success = await sendReminder24hWebhook(
+                  appointment._id,
+                  patient.name || null,
+                  patient.phone,
+                  appointmentDate
+                );
 
-                  // Record reminder sent
+                // Only record reminder if it was sent successfully
+                if (success) {
                   await ctx.runMutation(internal.reminders.recordReminderSent, {
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -487,6 +387,8 @@ export const testCheckReminders = internalAction({
                   
                   remindersSent["24h"]++;
                   console.log(`TEST: ✅ 24h reminder sent and recorded for appointment ${appointment._id}`);
+                } else {
+                  console.log(`TEST: ⚠️ 24h reminder webhook failed for appointment ${appointment._id}`);
                 }
               } else {
                 console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
@@ -522,20 +424,16 @@ export const testCheckReminders = internalAction({
               });
 
               if (patient) {
-                // Check webhook configuration before attempting to send
-                const webhookUrl = process.env.WEBHOOK_SMS_REMINDER_1H;
-                if (!webhookUrl) {
-                  console.log(`TEST: ⚠️ WEBHOOK_SMS_REMINDER_1H not configured, skipping 1h reminder webhook`);
-                } else {
-                  console.log(`TEST: 📤 Sending 1h reminder for appointment ${appointment._id} to ${patient.phone}`);
-                  await sendReminder1hWebhook(
-                    appointment._id,
-                    patient.name || null,
-                    patient.phone,
-                    appointmentDate
-                  );
+                console.log(`TEST: 📤 Sending 1h reminder for appointment ${appointment._id} to ${patient.phone}`);
+                const success = await sendReminder1hWebhook(
+                  appointment._id,
+                  patient.name || null,
+                  patient.phone,
+                  appointmentDate
+                );
 
-                  // Record reminder sent
+                // Only record reminder if it was sent successfully
+                if (success) {
                   await ctx.runMutation(internal.reminders.recordReminderSent, {
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -546,6 +444,8 @@ export const testCheckReminders = internalAction({
                   
                   remindersSent["1h"]++;
                   console.log(`TEST: ✅ 1h reminder sent and recorded for appointment ${appointment._id}`);
+                } else {
+                  console.log(`TEST: ⚠️ 1h reminder webhook failed for appointment ${appointment._id}`);
                 }
               } else {
                 console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);

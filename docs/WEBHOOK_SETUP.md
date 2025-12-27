@@ -2,33 +2,23 @@
 
 ## Overview
 
-The system sends POST requests to configured webhook URLs when appointments are created or canceled. When a new appointment is created, the webhook includes patient response links that patients can click to notify the provider about their status (running late, need to reschedule, etc.).
+The system sends POST requests to a single unified webhook URL for all SMS notifications (appointment confirmations, cancellations, and reminders). The webhook receives a simple payload with the phone number and pre-formatted message text, allowing GoHighLevel workflows to handle SMS sending.
 
 ## Environment Variables
 
 Add the following to your `.env.local` file:
 
 ```bash
-# Schedule Webhook URL - Required
-# This endpoint will receive POST requests when appointments are created
-SCHEDULE_WEBHOOK_URL=https://your-webhook-endpoint.com/webhook
+# Unified SMS Webhook URL - Required
+# This endpoint will receive POST requests for all SMS notifications
+# (appointments, cancellations, and reminders)
+GHL_SMS_WEBHOOK_URL=https://your-webhook-endpoint.com/sms-webhook
 
-# Cancel Webhook URL - Optional
-# This endpoint will receive POST requests when appointments are canceled
-# If not set, cancel webhooks will be sent to SCHEDULE_WEBHOOK_URL (if configured)
-CANCEL_WEBHOOK_URL=https://your-webhook-endpoint.com/webhook
-
-# Base URL - Required for webhook payload URLs
+# Base URL - Required for SMS message links
 # Should match your deployed application URL
 # NOTE: This must also be set in Convex dashboard as BASE_URL (without NEXT_PUBLIC_ prefix)
 # Convex reminder webhooks run in a separate environment and need BASE_URL set there
 NEXT_PUBLIC_BASE_URL=https://your-app-domain.com
-
-# Reminder Webhook URLs - Optional
-# These endpoints will receive POST requests for appointment reminders
-# If not set, reminder webhooks will be skipped silently
-WEBHOOK_SMS_REMINDER_24H=https://your-webhook-endpoint.com/reminder-24h
-WEBHOOK_SMS_REMINDER_1H=https://your-webhook-endpoint.com/reminder-1h
 
 # Quiet Hours - Optional
 # Prevents reminders from being sent during specified hours (0-23, 24-hour format)
@@ -43,51 +33,36 @@ SMS_QUIET_HOURS_END=8
 APPOINTMENT_TIMEZONE=America/Los_Angeles
 
 # Hospital Address - Optional
-# Address included in webhook payloads (defaults to example address)
+# Address included in SMS messages (defaults to example address)
 HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
 ```
 
 ## Webhook Payload Format
 
-### Schedule Webhook
-
-When a new appointment is created, a POST request is sent to `SCHEDULE_WEBHOOK_URL` with the following JSON payload:
+All webhook requests use the same simple payload format:
 
 ```json
 {
-  "appointment_id": "k123abc456def",
-  "patient_name": "John Doe",
-  "patient_phone": "+15551234567",
-  "appointment_date": "January 15, 2024",
-  "appointment_time": "2:30 PM",
-  "appointment_datetime": "01-15-2024 02:30 PM",
-  "hospital_address": "123 Medical Center Drive, Suite 456, San Francisco, CA 94102",
-  "response_urls": {
-    "15_min_late": "https://your-app-domain.com/15-late/k123abc456def",
-    "30_min_late": "https://your-app-domain.com/30-late/k123abc456def",
-    "reschedule_cancel": "https://your-app-domain.com/reschedule-cancel/k123abc456def"
-  }
+  "phone": "+15551234567",
+  "message": "Hi John! Your appointment is scheduled for January 15, 2024 at 2:30 PM at 123 Medical Center Drive, Suite 456, San Francisco, CA 94102. If you're running late or need to reschedule, use these links: 15 min late: https://your-app-domain.com/15-late/k123abc456def | 30 min late: https://your-app-domain.com/30-late/k123abc456def | Reschedule/Cancel: https://your-app-domain.com/reschedule-cancel/k123abc456def"
 }
 ```
 
-### Cancel Webhook
+### Message Types
 
-When an appointment is canceled, a POST request is sent to `CANCEL_WEBHOOK_URL` (or `SCHEDULE_WEBHOOK_URL` if `CANCEL_WEBHOOK_URL` is not set) with the following JSON payload:
+The system sends different message types based on the event:
 
-```json
-{
-  "appointment_id": "k123abc456def",
-  "patient_name": "John Doe",
-  "patient_phone": "+15551234567",
-  "appointment_date": "January 15, 2024",
-  "appointment_time": "2:30 PM",
-  "appointment_datetime": "01-15-2024 02:30 PM",
-  "hospital_address": "123 Medical Center Drive, Suite 456, San Francisco, CA 94102",
-  "action": "canceled"
-}
-```
+1. **Schedule Confirmation**: Sent when a new appointment is created
+   - Example: "Hi [Name]! Your appointment is scheduled for [Date] at [Time]. If you're running late or need to reschedule, use these links: ..."
 
-Note: The cancel webhook payload includes an `action` field set to `"canceled"` and does not include `response_urls` since the appointment is no longer active.
+2. **Cancellation Notification**: Sent when an appointment is canceled
+   - Example: "Hi [Name], your appointment on [Date] at [Time] has been canceled. If you need to reschedule, please contact us."
+
+3. **24h Reminder**: Sent 24 hours before appointment
+   - Example: "Hi [Name], reminder: You have an appointment tomorrow ([Date]) at [Time]. If you're running late or need to reschedule, use these links: ..."
+
+4. **1h Reminder**: Sent 1 hour before appointment
+   - Example: "Hi [Name], reminder: You have an appointment today at [Time] ([Date]). If you're running late or need to reschedule, use these links: ..."
 
 ## Patient Response Pages
 
@@ -121,9 +96,9 @@ Logs are automatically filtered by team - users only see logs for appointments i
 
 To test the webhook integration:
 
-1. Set `SCHEDULE_WEBHOOK_URL` in your `.env.local`
+1. Set `GHL_SMS_WEBHOOK_URL` in your `.env.local` (and `GHL_SMS_WEBHOOK_URL` in Convex dashboard)
 2. Create a new appointment via the Submit form
-3. Check your webhook endpoint to verify it received the payload
+3. Check your webhook endpoint to verify it received the payload with `phone` and `message` fields
 4. Visit one of the patient response URLs
 5. Check the `/logs` page to verify the action was logged
 
@@ -144,31 +119,7 @@ This ensures that each patient can only have one active appointment at a time, p
 
 ## Reminder Webhooks
 
-The system can send reminder webhooks 24 hours and 1 hour before appointments. These are separate from the schedule/cancel webhooks and are sent via cron jobs that run every hour.
-
-### Reminder Webhook Payload
-
-Reminder webhooks use the same payload format as schedule webhooks, but include an `action` field:
-
-```json
-{
-  "appointment_id": "k123abc456def",
-  "patient_name": "John Doe",
-  "patient_phone": "+15551234567",
-  "appointment_date": "January 15, 2024",
-  "appointment_time": "2:30 PM",
-  "appointment_datetime": "01-15-2024 02:30 PM",
-  "hospital_address": "123 Medical Center Drive, Suite 456, San Francisco, CA 94102",
-  "action": "reminder_24h",
-  "response_urls": {
-    "15_min_late": "https://your-app-domain.com/15-late/k123abc456def",
-    "30_min_late": "https://your-app-domain.com/30-late/k123abc456def",
-    "reschedule_cancel": "https://your-app-domain.com/reschedule-cancel/k123abc456def"
-  }
-}
-```
-
-The `action` field will be either `"reminder_24h"` or `"reminder_1h"` depending on which reminder is being sent.
+The system can send reminder webhooks 24 hours and 1 hour before appointments. These use the same unified webhook URL and payload format as other notifications, but with reminder-specific message text.
 
 ### Reminder Timing
 
@@ -193,14 +144,14 @@ If `SMS_QUIET_HOURS_START` and `SMS_QUIET_HOURS_END` are configured, reminder we
 2. Add the following variables:
 
 ```bash
+# Unified SMS Webhook URL - REQUIRED
+# This endpoint will receive POST requests for all SMS notifications
+GHL_SMS_WEBHOOK_URL=https://your-webhook-endpoint.com/sms-webhook
+
 # Base URL - REQUIRED for SMS notification links
 # This must match your production domain (e.g., https://your-app-domain.com)
 # Without this, users will receive localhost links in SMS notifications!
 BASE_URL=https://your-app-domain.com
-
-# Reminder webhook URLs (same as Next.js env vars)
-WEBHOOK_SMS_REMINDER_24H=https://your-webhook-endpoint.com/reminder-24h
-WEBHOOK_SMS_REMINDER_1H=https://your-webhook-endpoint.com/reminder-1h
 
 # Optional: Quiet hours and timezone
 SMS_QUIET_HOURS_START=22
@@ -209,18 +160,20 @@ APPOINTMENT_TIMEZONE=America/Los_Angeles
 HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
 ```
 
-**Critical**: If `BASE_URL` is not set in Convex, reminder webhooks will fail with an error and no SMS notifications will be sent. This prevents accidentally sending localhost links to users.
+**Critical**: 
+- If `GHL_SMS_WEBHOOK_URL` is not set, SMS webhooks will be skipped silently
+- If `BASE_URL` is not set in Convex, reminder webhooks will fail with an error and no SMS notifications will be sent. This prevents accidentally sending localhost links to users.
 
 ## Notes
 
 - Patient response pages are **public** (no authentication required)
 - Webhook failures do not prevent appointment creation or cancellation
 - All webhook errors are logged to the console
-- If `SCHEDULE_WEBHOOK_URL` is not set, schedule webhooks are skipped silently
-- If `CANCEL_WEBHOOK_URL` is not set, cancel webhooks will be sent to `SCHEDULE_WEBHOOK_URL` if configured
-- If `WEBHOOK_SMS_REMINDER_24H` or `WEBHOOK_SMS_REMINDER_1H` are not set, reminder webhooks are skipped silently
+- If `GHL_SMS_WEBHOOK_URL` is not set, all SMS webhooks are skipped silently
 - **If `BASE_URL` is not set in Convex dashboard, reminder webhooks will fail** - this prevents sending localhost links
 - Webhook requests have a 10-second timeout
 - Only future appointments are considered when checking for existing appointments
 - Reminder webhooks are sent via hourly cron jobs, not immediately when appointments are created
+- All messages are pre-formatted in the application code - the webhook receives ready-to-send SMS text
+- GoHighLevel workflows should extract the `phone` and `message` fields and send the SMS directly
 
