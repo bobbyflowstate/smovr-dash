@@ -5,6 +5,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { isValidAction, LOG_MESSAGES, type LogAction } from '@/lib/log-actions';
+import { APPOINTMENT_TIMEZONE, extractComponentsInTimezone } from '@/lib/timezone-utils';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -64,12 +65,49 @@ export async function POST(request: NextRequest) {
     console.log('API: Creating log for appointment:', appointmentId, 'action:', action);
 
     // Validate appointment exists and get its data
-    const appointment = await convex.query(api.appointments.getById, {
-      appointmentId: appointmentId as Id<"appointments">
-    });
+    let appointment;
+    try {
+      appointment = await convex.query(api.appointments.getById, {
+        appointmentId: appointmentId as Id<"appointments">
+      });
+    } catch (error) {
+      // Handle validation errors (invalid ID format) as 404
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.includes('ArgumentValidationError') || errorMessage.includes('does not match validator')) {
+        return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+      }
+      // Re-throw other errors (Convex down, etc.) as 500
+      throw error;
+    }
 
     if (!appointment) {
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+    }
+
+    // Check if appointment date has passed (next day or later)
+    // We allow late submissions on the same day, even if the appointment time has passed
+    // Compare dates in the clinic's timezone, not server's local timezone
+    const appointmentDate = new Date(appointment.dateTime); // UTC ISO string
+    const now = new Date(); // Current UTC time
+    
+    // Extract date components in the clinic's timezone for both dates
+    const appointmentComponents = extractComponentsInTimezone(appointmentDate, APPOINTMENT_TIMEZONE);
+    const todayComponents = extractComponentsInTimezone(now, APPOINTMENT_TIMEZONE);
+    
+    // Compare dates only (ignore time) - if appointment date is before today in clinic timezone, it's passed
+    const appointmentDateOnly = new Date(
+      appointmentComponents.year,
+      appointmentComponents.month,
+      appointmentComponents.day
+    );
+    const todayDateOnly = new Date(
+      todayComponents.year,
+      todayComponents.month,
+      todayComponents.day
+    );
+    
+    if (appointmentDateOnly < todayDateOnly) {
+      return NextResponse.json({ error: 'Appointment has already passed' }, { status: 410 }); // 410 Gone
     }
 
     // Get message from constants
