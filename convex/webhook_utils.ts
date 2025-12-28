@@ -121,7 +121,7 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
 }
 
 /**
- * Formats schedule confirmation message
+ * Formats schedule confirmation message (bilingual English/Spanish)
  */
 export function formatScheduleMessage(
   patientName: string | null,
@@ -132,18 +132,24 @@ export function formatScheduleMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
-  const name = patientName ? `Hi ${patientName}! ` : '';
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
   
-  return `${name}Your appointment is scheduled for ${appointmentDateStr} at ${appointmentTimeStr} at ${hospitalAddress}. ` +
-    `If you're running late or need to reschedule, use these links: ` +
-    `15 min late: ${url15} | 30 min late: ${url30} | Reschedule/Cancel: ${urlReschedule}`;
+  const greetingEn = patientName ? `Hi ${patientName}, your appointment is confirmed.` : 'Your appointment is confirmed.';
+  const greetingEs = patientName ? `Hola ${patientName}, su cita está confirmada.` : 'Su cita está confirmada.';
+  
+  return `${greetingEn}\n${greetingEs}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Address / Dirección:\n${hospitalAddress}\n\n` +
+    `Let us know if you are / Infórmenos si usted:\n\n` +
+    `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
+    `• 30 mins late / 30 minutos tarde:\n${url30}\n\n` +
+    `• Need to reschedule / Necesita reprogramar:\n${urlReschedule}`;
 }
 
 /**
- * Formats cancellation notification message
+ * Formats cancellation notification message (bilingual English/Spanish)
  */
 export function formatCancelMessage(
   patientName: string | null,
@@ -152,10 +158,19 @@ export function formatCancelMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
-  const name = patientName ? `Hi ${patientName}, ` : '';
   
-  return `${name}your appointment on ${appointmentDateStr} at ${appointmentTimeStr} at ${hospitalAddress} has been canceled. ` +
-    `If you need to reschedule, please contact us.`;
+  const msgEn = patientName 
+    ? `Hi ${patientName}, your appointment has been canceled.`
+    : 'Your appointment has been canceled.';
+  const msgEs = patientName
+    ? `Hola ${patientName}, su cita ha sido cancelada.`
+    : 'Su cita ha sido cancelada.';
+  
+  return `${msgEn}\n${msgEs}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Address / Dirección:\n${hospitalAddress}\n\n` +
+    `If you need to reschedule, please contact us.\n` +
+    `Si necesita reprogramar, por favor contáctenos.`;
 }
 
 /**
@@ -193,7 +208,7 @@ function getRelativeDayLabel(appointmentDate: Date, timezone: string): 'today' |
 }
 
 /**
- * Formats 24h reminder message
+ * Formats 24h reminder message (bilingual English/Spanish)
  */
 export function formatReminder24hMessage(
   patientName: string | null,
@@ -204,26 +219,50 @@ export function formatReminder24hMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
-  const name = patientName ? `Hi ${patientName}, ` : '';
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
   
   // Use accurate relative day label based on actual calendar day
   const relativeDay = getRelativeDayLabel(appointmentDate, timezone);
-  const whenStr = relativeDay === 'tomorrow' 
-    ? `tomorrow (${appointmentDateStr})` 
-    : relativeDay === 'today'
-    ? `today (${appointmentDateStr})`
-    : `on ${appointmentDateStr}`;
   
-  return `${name}reminder: You have an appointment ${whenStr} at ${appointmentTimeStr} at ${hospitalAddress}. ` +
-    `If you're running late or need to reschedule, use these links: ` +
-    `15 min late: ${url15} | 30 min late: ${url30} | Reschedule/Cancel: ${urlReschedule}`;
+  let msgEn: string;
+  let msgEs: string;
+  
+  if (relativeDay === 'tomorrow') {
+    msgEn = patientName 
+      ? `Hi ${patientName}, just a reminder that your appointment is tomorrow.`
+      : 'Just a reminder that your appointment is tomorrow.';
+    msgEs = patientName
+      ? `Hola ${patientName}, un recordatorio de que su cita es mañana.`
+      : 'Un recordatorio de que su cita es mañana.';
+  } else if (relativeDay === 'today') {
+    msgEn = patientName 
+      ? `Hi ${patientName}, just a reminder that your appointment is today.`
+      : 'Just a reminder that your appointment is today.';
+    msgEs = patientName
+      ? `Hola ${patientName}, un recordatorio de que su cita es hoy.`
+      : 'Un recordatorio de que su cita es hoy.';
+  } else {
+    msgEn = patientName 
+      ? `Hi ${patientName}, just a reminder about your upcoming appointment.`
+      : 'Just a reminder about your upcoming appointment.';
+    msgEs = patientName
+      ? `Hola ${patientName}, un recordatorio sobre su próxima cita.`
+      : 'Un recordatorio sobre su próxima cita.';
+  }
+  
+  return `${msgEn}\n${msgEs}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Address / Dirección:\n${hospitalAddress}\n\n` +
+    `Let us know if you are / Infórmenos si usted:\n\n` +
+    `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
+    `• 30 mins late / 30 minutos tarde:\n${url30}\n\n` +
+    `• Need to reschedule / Necesita reprogramar:\n${urlReschedule}`;
 }
 
 /**
- * Formats 1h reminder message
+ * Formats 1h reminder message (bilingual English/Spanish)
  */
 export function formatReminder1hMessage(
   patientName: string | null,
@@ -234,21 +273,23 @@ export function formatReminder1hMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
-  const name = patientName ? `Hi ${patientName}, ` : '';
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
   
-  // Use accurate relative day label based on actual calendar day
-  const relativeDay = getRelativeDayLabel(appointmentDate, timezone);
-  const whenStr = relativeDay === 'today' 
-    ? `today at ${appointmentTimeStr}` 
-    : relativeDay === 'tomorrow'
-    ? `tomorrow at ${appointmentTimeStr}`
-    : `on ${appointmentDateStr} at ${appointmentTimeStr}`;
+  const msgEn = patientName 
+    ? `Hi ${patientName}, just a reminder that your appointment is in about 1 hour.`
+    : 'Just a reminder that your appointment is in about 1 hour.';
+  const msgEs = patientName
+    ? `Hola ${patientName}, un recordatorio rápido de que su cita es en aproximadamente 1 hora.`
+    : 'Un recordatorio rápido de que su cita es en aproximadamente 1 hora.';
   
-  return `${name}reminder: You have an appointment ${whenStr} at ${hospitalAddress}. ` +
-    `If you're running late or need to reschedule, use these links: ` +
-    `15 min late: ${url15} | 30 min late: ${url30} | Reschedule/Cancel: ${urlReschedule}`;
+  return `${msgEn}\n${msgEs}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Address / Dirección:\n${hospitalAddress}\n\n` +
+    `Let us know if you are / Infórmenos si usted:\n\n` +
+    `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
+    `• 30 mins late / 30 minutos tarde:\n${url30}\n\n` +
+    `• Need to reschedule / Necesita reprogramar:\n${urlReschedule}`;
 }
 
