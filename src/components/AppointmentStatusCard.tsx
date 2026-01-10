@@ -140,7 +140,7 @@ export default function AppointmentStatusCard({
               Appointment Not Found / Cita no encontrada
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-2">
-              We couldn't find this appointment. Please check the link or contact your provider.
+              We couldn&apos;t find this appointment. Please check the link or contact your provider.
             </p>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               No pudimos encontrar esta cita. Por favor verifique el enlace o contacte a su proveedor.
