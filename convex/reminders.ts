@@ -9,6 +9,7 @@ import {
   hoursUntil as hoursUntilAppointment,
   isWithinWindow,
 } from "./reminder_logic";
+import { assertDevEnvironment } from "./env";
 
 // Get timezone and hospital address from environment variables
 const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
@@ -658,6 +659,9 @@ export const seedRemindersTestData = internalMutation({
     windowsHours: typeof REMINDER_WINDOWS_HOURS;
     note: string;
   }> => {
+    // Safety: seeding is for local/dev only.
+    assertDevEnvironment("seedRemindersTestData");
+
     const count1h = args.count1h ?? 2;
     const count24h = args.count24h ?? 2;
     const minutesFromNowFor1h = args.minutesFromNowFor1h ?? 65; // within 0.5h-2h window
