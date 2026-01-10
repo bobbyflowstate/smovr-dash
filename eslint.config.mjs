@@ -10,7 +10,9 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // Note: eslint-config-next@14.2.3 in this repo does not include `next/typescript`.
+  // Keep linting on the supported Next preset.
+  ...compat.extends("next/core-web-vitals"),
   {
     ignores: [
       "node_modules/**",
