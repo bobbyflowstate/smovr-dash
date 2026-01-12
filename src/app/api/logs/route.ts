@@ -86,7 +86,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Try to include a contact phone for the clinic/team (used by the public landing pages)
-    const team = await convex.query(api.teams.getById, {
+    // Note: TypeScript types may not include teams, but it exists at runtime
+    const team = await convex.query((api as any).teams.getById, {
       teamId: appointment.teamId,
     });
     const contactPhone = team?.contactPhone || DEFAULT_TEAM_CONTACT_PHONE || null;

@@ -53,8 +53,8 @@ export async function sendScheduleWebhook(
       HOSPITAL_ADDRESS
     );
     
-    // Send SMS webhook
-    await sendSMSWebhook(phone, message);
+    // Send SMS webhook (from Next.js API route, so source is "vercel")
+    await sendSMSWebhook(phone, message, "vercel");
   } catch (error) {
     console.error('Error preparing schedule webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment creation
@@ -82,8 +82,8 @@ export async function sendCancelWebhook(
     // Format message using shared formatter
     const message = formatCancelMessage(patientName, appointmentDate, APPOINTMENT_TIMEZONE, HOSPITAL_ADDRESS);
     
-    // Send SMS webhook
-    await sendSMSWebhook(phone, message);
+    // Send SMS webhook (from Next.js API route, so source is "vercel")
+    await sendSMSWebhook(phone, message, "vercel");
   } catch (error) {
     console.error('Error preparing cancel webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment cancellation

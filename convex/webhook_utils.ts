@@ -9,6 +9,7 @@
  */
 
 import { Id } from "./_generated/dataModel";
+import { logWebhookSuccess, logWebhookFailure, createLogger, LogSource } from "./logger";
 
 // Webhook timeout constant (in milliseconds)
 const WEBHOOK_TIMEOUT_MS = 10000; // 10 seconds
@@ -89,13 +90,19 @@ export function formatAppointmentDateTime(appointmentDate: Date, timezone: strin
  * Unified webhook function that sends SMS message to GoHighLevel
  * Includes automatic retry with exponential backoff for transient failures.
  * 
+ * @param phone - Phone number to send SMS to
+ * @param message - SMS message content
+ * @param source - Log source: "convex" for Convex functions, "vercel" for Next.js API routes
  * @returns true if webhook was sent successfully, false otherwise
  */
-export async function sendSMSWebhook(phone: string, message: string): Promise<boolean> {
+export async function sendSMSWebhook(phone: string, message: string, source: LogSource = "convex"): Promise<boolean> {
   const webhookUrl = process.env.GHL_SMS_WEBHOOK_URL;
+  const logger = createLogger({ operation: "sendSMSWebhook" }, source);
   
   if (!webhookUrl) {
-    console.log('GHL_SMS_WEBHOOK_URL not configured, skipping SMS webhook');
+    logger.warn("GHL_SMS_WEBHOOK_URL not configured, skipping SMS webhook", {
+      phone: phone.replace(/(\d{3})(\d{3})(\d{4})/, "***-***-$3"),
+    });
     return false;
   }
 
@@ -107,7 +114,11 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
     // Apply backoff delay before retries (not on first attempt)
     if (attempt > 0) {
       const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
-      console.log(`SMS webhook retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms backoff`);
+      logger.debug(`SMS webhook retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms backoff`, {
+        attempt,
+        maxRetries: MAX_RETRIES,
+        backoffMs,
+      });
       await sleep(backoffMs);
     }
 
@@ -117,8 +128,10 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
 
     try {
       if (attempt === 0) {
-        console.log('Sending SMS webhook to:', webhookUrl);
-        console.log('SMS webhook payload:', payload);
+        logger.debug("Sending SMS webhook", {
+          webhookUrl,
+          messageLength: message.length,
+        });
       }
 
       const webhookResponse = await fetch(webhookUrl, {
@@ -133,11 +146,9 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
       clearTimeout(timeoutId);
 
       if (webhookResponse.ok) {
-        if (attempt > 0) {
-          console.log(`SMS webhook sent successfully on retry ${attempt}`);
-        } else {
-          console.log('SMS webhook sent successfully');
-        }
+        logWebhookSuccess(phone, message, attempt + 1, {
+          operation: "sendSMSWebhook",
+        }, source);
         return true;
       }
 
@@ -145,20 +156,62 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
       lastStatus = webhookResponse.status;
       if (!isRetryableStatus(webhookResponse.status)) {
         // 4xx errors won't succeed on retry - fail immediately
-        console.error(`SMS webhook failed with non-retryable status: ${webhookResponse.status}`);
+        logWebhookFailure(
+          phone,
+          `HTTP ${webhookResponse.status}`,
+          attempt + 1,
+          MAX_RETRIES + 1,
+          {
+            operation: "sendSMSWebhook",
+            statusCode: webhookResponse.status,
+            retryable: false,
+          },
+          source
+        );
         return false;
       }
 
-      console.warn(`SMS webhook failed with retryable status: ${webhookResponse.status}`);
+      // Retryable error - log warning but continue
+      logWebhookFailure(
+        phone,
+        `HTTP ${webhookResponse.status}`,
+        attempt + 1,
+        MAX_RETRIES + 1,
+        {
+          operation: "sendSMSWebhook",
+          statusCode: webhookResponse.status,
+          retryable: true,
+        },
+        source
+      );
       // Continue to next retry attempt
     } catch (webhookError) {
       clearTimeout(timeoutId);
       lastError = webhookError instanceof Error ? webhookError : new Error(String(webhookError));
 
       if (lastError.name === 'AbortError') {
-        console.warn(`SMS webhook request timed out (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        logWebhookFailure(
+          phone,
+          new Error(`Request timed out after ${WEBHOOK_TIMEOUT_MS}ms`),
+          attempt + 1,
+          MAX_RETRIES + 1,
+          {
+            operation: "sendSMSWebhook",
+            timeout: WEBHOOK_TIMEOUT_MS,
+          },
+          source
+        );
       } else {
-        console.warn(`SMS webhook error (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, lastError.message);
+        logWebhookFailure(
+          phone,
+          lastError,
+          attempt + 1,
+          MAX_RETRIES + 1,
+          {
+            operation: "sendSMSWebhook",
+          },
+          source
+        );
       }
       // Continue to next retry attempt
     }
@@ -166,9 +219,30 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
 
   // All retries exhausted
   if (lastError) {
-    console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last error:`, lastError.message);
+    logWebhookFailure(
+      phone,
+      lastError,
+      MAX_RETRIES + 1,
+      MAX_RETRIES + 1,
+      {
+        operation: "sendSMSWebhook",
+        finalFailure: true,
+      },
+      source
+    );
   } else if (lastStatus) {
-    console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last status: ${lastStatus}`);
+    logWebhookFailure(
+      phone,
+      `HTTP ${lastStatus}`,
+      MAX_RETRIES + 1,
+      MAX_RETRIES + 1,
+      {
+        operation: "sendSMSWebhook",
+        statusCode: lastStatus,
+        finalFailure: true,
+      },
+      source
+    );
   }
   return false;
 }

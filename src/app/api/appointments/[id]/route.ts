@@ -5,6 +5,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { sendCancelWebhook } from '@/lib/webhook-utils';
+import { logAuthFailure, createLogger } from '../../../../../convex/logger';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -18,13 +19,15 @@ export async function DELETE(
     const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
     
     if (!isAuthenticated || !claims?.email) {
+      logAuthFailure("Not authenticated or missing email", undefined, { operation: "DELETE /api/appointments/[id]" }, "vercel");
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const userEmail = claims.email; // 🔑 Server-controlled user identity
     const appointmentId = params.id as Id<"appointments">;
 
-    console.log('API: Canceling appointment for user:', userEmail);
+    const logger = createLogger({ operation: "DELETE /api/appointments/[id]", userEmail, appointmentId }, "vercel");
+    logger.debug("Canceling appointment");
 
     // Get appointment details before canceling (for webhook)
     const appointment = await convex.query(api.appointments.getById, {
@@ -32,6 +35,7 @@ export async function DELETE(
     });
 
     if (!appointment) {
+      logger.warn("Appointment not found", { appointmentId });
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
     }
 
@@ -46,6 +50,13 @@ export async function DELETE(
       userEmail, // 🛡️ Server provides the real user email
     });
 
+    const cancelLogger = createLogger({ operation: "DELETE /api/appointments/[id]", userEmail, appointmentId }, "vercel");
+    cancelLogger.info("Appointment canceled", {
+      appointmentId,
+      patientId: appointment.patientId,
+      teamId: appointment.teamId,
+    });
+
     // 🔗 Send cancel webhook after successful cancellation
     if (patient) {
       await sendCancelWebhook(
@@ -56,11 +67,18 @@ export async function DELETE(
         patient.name || null,
         appointment.dateTime
       );
+    } else {
+      logger.warn("Patient not found for canceled appointment", {
+        appointmentId,
+        patientId: appointment.patientId,
+      });
     }
 
+    logger.info("Appointment canceled successfully", { appointmentId });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error canceling appointment:', error);
+    const logger = createLogger({ operation: "DELETE /api/appointments/[id]" }, "vercel");
+    logger.error("Error canceling appointment", {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : 'Internal server error' 
     }, { status: 500 });
