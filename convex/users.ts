@@ -27,6 +27,7 @@ export const getOrCreateUserByEmail = mutation({
     // Create a new team for the new user
     const teamId = await ctx.db.insert("teams", {
       name: `${args.name}'s Team`,
+      contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
     });
 
     // Create the new user
@@ -96,6 +97,7 @@ export const getOrCreateUser = mutation({
     // Create a new team for the new user
     const teamId = await ctx.db.insert("teams", {
       name: `${identity.name}'s Team`,
+      contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
     });
 
     // Create the new user

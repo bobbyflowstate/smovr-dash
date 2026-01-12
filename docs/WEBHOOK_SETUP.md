@@ -28,6 +28,11 @@ NEXT_PUBLIC_BASE_URL=https://your-app-domain.com
 SMS_QUIET_HOURS_START=22
 SMS_QUIET_HOURS_END=8
 
+# Default Team Contact Phone - Optional (but recommended)
+# Used on public patient landing pages (e.g. reschedule/cancel and "appointment passed")
+# If not set, the UI will avoid showing a misleading hard-coded number.
+DEFAULT_TEAM_CONTACT_PHONE=+14155550123
+
 # Appointment Timezone - Optional
 # IANA timezone string for appointment scheduling (defaults to America/Los_Angeles)
 APPOINTMENT_TIMEZONE=America/Los_Angeles
@@ -77,7 +82,7 @@ Three public pages handle patient responses:
    - Logs action to dashboard
 
 3. **`/reschedule-cancel/[appointmentId]`** - Patient needs to reschedule/cancel
-   - Displays phone number: **(555) 123-4567**
+   - Displays the clinic/team contact phone (configured via `DEFAULT_TEAM_CONTACT_PHONE` or per-team `teams.contactPhone`)
    - Logs action to dashboard
 
 ## Logs Dashboard

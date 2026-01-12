@@ -13,6 +13,7 @@ export default defineSchema({
 
   teams: defineTable({
     name: v.string(),
+    contactPhone: v.optional(v.string()),
   }),
 
   patients: defineTable({

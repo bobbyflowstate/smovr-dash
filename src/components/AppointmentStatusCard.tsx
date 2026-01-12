@@ -1,6 +1,7 @@
 "use client";
 
 import { AppointmentStatus } from "@/lib/use-appointment-action";
+import { formatPhoneForDisplay, normalizePhoneForTel } from "@/lib/phone-utils";
 
 interface AppointmentStatusCardProps {
   status: AppointmentStatus;
@@ -9,6 +10,7 @@ interface AppointmentStatusCardProps {
   successMessage?: string; // Can be bilingual (e.g., "English / Spanish") or just English
   successSubtext?: string;
   showPhoneNumber?: boolean;
+  phoneNumber?: string; // E.164 preferred (e.g., +14155550123)
 }
 
 export default function AppointmentStatusCard({
@@ -18,7 +20,12 @@ export default function AppointmentStatusCard({
   successMessage = "We'll be waiting for you. / Lo estaremos esperando.",
   successSubtext,
   showPhoneNumber = false,
+  phoneNumber,
 }: AppointmentStatusCardProps) {
+  const phoneDisplay = phoneNumber ? formatPhoneForDisplay(phoneNumber) : null;
+  const phoneTel = phoneNumber ? normalizePhoneForTel(phoneNumber) : null;
+  const canShowPhone = !!(showPhoneNumber && phoneDisplay && phoneTel);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center transition-colors">
@@ -53,8 +60,8 @@ export default function AppointmentStatusCard({
 
         {status === "success" && (
           <>
-            <div className={`w-16 h-16 ${showPhoneNumber ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-6`}>
-              {showPhoneNumber ? (
+            <div className={`w-16 h-16 ${canShowPhone ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-6`}>
+              {canShowPhone ? (
                 <svg
                   className="w-8 h-8 text-blue-600 dark:text-blue-400"
                   fill="none"
@@ -99,13 +106,13 @@ export default function AppointmentStatusCard({
                 )}
               </>
             )}
-            {showPhoneNumber && (
+            {canShowPhone && (
               <>
                 <a
-                  href="tel:+15551234567"
+                  href={`tel:${phoneTel}`}
                   className="inline-block text-3xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors mb-6"
                 >
-                  (555) 123-4567
+                  {phoneDisplay}
                 </a>
               </>
             )}
@@ -140,12 +147,12 @@ export default function AppointmentStatusCard({
               Appointment Not Found / Cita no encontrada
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-2">
-              We couldn't find this appointment. Please check the link or contact your provider.
+              We couldn&apos;t find this appointment. Please check the link or contact your provider.
             </p>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               No pudimos encontrar esta cita. Por favor verifique el enlace o contacte a su proveedor.
             </p>
-            {showPhoneNumber && (
+            {canShowPhone && (
               <>
                 <p className="text-lg text-gray-700 dark:text-gray-300 mb-2 mt-4">
                   Please call us at
@@ -154,10 +161,10 @@ export default function AppointmentStatusCard({
                   Por favor llámenos al
                 </p>
                 <a
-                  href="tel:+15551234567"
+                  href={`tel:${phoneTel}`}
                   className="inline-block text-2xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
                 >
-                  (555) 123-4567
+                  {phoneDisplay}
                 </a>
               </>
             )}
@@ -190,7 +197,7 @@ export default function AppointmentStatusCard({
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               Esta cita ya pasó. Si necesita asistencia, por favor contacte a su proveedor.
             </p>
-            {showPhoneNumber && (
+            {canShowPhone && (
               <>
                 <p className="text-lg text-gray-700 dark:text-gray-300 mb-2 mt-4">
                   Please call us at
@@ -199,10 +206,10 @@ export default function AppointmentStatusCard({
                   Por favor llámenos al
                 </p>
                 <a
-                  href="tel:+15551234567"
+                  href={`tel:${phoneTel}`}
                   className="inline-block text-2xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
                 >
-                  (555) 123-4567
+                  {phoneDisplay}
                 </a>
               </>
             )}
@@ -235,7 +242,7 @@ export default function AppointmentStatusCard({
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               {errorMessage || "No se pudo procesar su solicitud. Por favor contacte a su proveedor."}
             </p>
-            {showPhoneNumber && (
+            {canShowPhone && (
               <>
                 <p className="text-lg text-gray-700 dark:text-gray-300 mb-2 mt-4">
                   Please call us at
@@ -244,10 +251,10 @@ export default function AppointmentStatusCard({
                   Por favor llámenos al
                 </p>
                 <a
-                  href="tel:+15551234567"
+                  href={`tel:${phoneTel}`}
                   className="inline-block text-2xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
                 >
-                  (555) 123-4567
+                  {phoneDisplay}
                 </a>
               </>
             )}

@@ -1,8 +1,15 @@
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { sendSMSWebhook, formatReminder24hMessage, formatReminder1hMessage } from "./webhook_utils";
+import {
+  REMINDER_WINDOWS_HOURS,
+  getEligibleReminderRangesISO,
+  hoursUntil as hoursUntilAppointment,
+  isWithinWindow,
+} from "./reminder_logic";
+import { assertDevEnvironment } from "./env";
 
 // Get timezone and hospital address from environment variables
 const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
@@ -11,14 +18,6 @@ const HOSPITAL_ADDRESS = process.env.HOSPITAL_ADDRESS || '123 Medical Center Dri
 // This must be set in Convex dashboard environment variables
 // Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
 const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
-
-// Reminder window constants (in hours before appointment)
-// Wider windows ensure reminders aren't missed due to cron timing
-const REMINDER_24H_WINDOW_START = 23; // Start checking 23 hours before
-const REMINDER_24H_WINDOW_END = 25;   // Stop checking 25 hours before (wider window: 23-25h)
-const REMINDER_1H_WINDOW_START = 0.5; // Start checking 30 minutes before
-const REMINDER_1H_WINDOW_END = 2;     // Stop checking 2 hours before (wider window: 0.5-2h)
-
 
 // Reminder type constants for type safety
 export type ReminderType = "24h" | "1h" | "birthday";
@@ -169,22 +168,32 @@ export const checkAndSendReminders = internalAction({
     const now = new Date();
     const nowISO = now.toISOString();
 
-    // Query all future appointments
-    const allAppointments = await ctx.runQuery(internal.reminders.getAllFutureAppointments, {
-      nowISO,
+    // Query only appointments that could be eligible for reminder notifications.
+    // This keeps cron cheap enough to run frequently (e.g. every minute).
+    const ranges = getEligibleReminderRangesISO(now, REMINDER_WINDOWS_HOURS);
+    const appts1h = await ctx.runQuery(internal.reminders.getAppointmentsInRange, {
+      startISO: ranges["1h"].startISO,
+      endISO: ranges["1h"].endISO,
+    });
+    const appts24h = await ctx.runQuery(internal.reminders.getAppointmentsInRange, {
+      startISO: ranges["24h"].startISO,
+      endISO: ranges["24h"].endISO,
     });
 
-    console.log(`Reminders cron: Found ${allAppointments.length} future appointments`);
+    const allAppointments = [...appts1h, ...appts24h];
+    console.log(
+      `Reminders cron: Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
+    );
 
     // Process each appointment
     for (const appointment of allAppointments) {
       try {
         const appointmentDate = new Date(appointment.dateTime);
-        const hoursUntilAppointment = (appointmentDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        const hoursUntil = hoursUntilAppointment(appointmentDate, now);
 
         // Check if appointment needs 24h reminder
-        if (hoursUntilAppointment >= REMINDER_24H_WINDOW_START && hoursUntilAppointment < REMINDER_24H_WINDOW_END) {
-          // Check if 24h reminder already sent
+        if (isWithinWindow("24h", hoursUntil)) {
+          // Check if 24h reminder already sent (includes bookings within the 24h window)
           const existingReminder = await ctx.runQuery(
             internal.reminders.checkReminderSent,
             {
@@ -223,7 +232,7 @@ export const checkAndSendReminders = internalAction({
         }
 
         // Check if appointment needs 1h reminder
-        if (hoursUntilAppointment >= REMINDER_1H_WINDOW_START && hoursUntilAppointment < REMINDER_1H_WINDOW_END) {
+        if (isWithinWindow("1h", hoursUntil)) {
           // Check if 1h reminder already sent
           const existingReminder = await ctx.runQuery(
             internal.reminders.checkReminderSent,
@@ -325,18 +334,28 @@ export const testCheckReminders = internalAction({
       const nowISO = now.toISOString();
       console.log(`TEST: Current time: ${nowISO}`);
 
-      // Query all future appointments
-      console.log('TEST: Querying all future appointments...');
+      // Query only eligible appointments (matches production cron behavior)
+      console.log('TEST: Querying eligible appointments (1h + 24h windows)...');
+      const ranges = getEligibleReminderRangesISO(now, REMINDER_WINDOWS_HOURS);
+      const appts1h = await ctx.runQuery(internal.reminders.getAppointmentsInRange, {
+        startISO: ranges["1h"].startISO,
+        endISO: ranges["1h"].endISO,
+      });
+      const appts24h = await ctx.runQuery(internal.reminders.getAppointmentsInRange, {
+        startISO: ranges["24h"].startISO,
+        endISO: ranges["24h"].endISO,
+      });
+
       const allAppointments: Array<{
         _id: Id<"appointments">;
         patientId: Id<"patients">;
         dateTime: string;
         teamId: Id<"teams">;
-      }> = await ctx.runQuery(internal.reminders.getAllFutureAppointments, {
-        nowISO,
-      });
+      }> = [...appts1h, ...appts24h];
 
-      console.log(`TEST: ✅ Found ${allAppointments.length} future appointments`);
+      console.log(
+        `TEST: ✅ Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
+      );
 
       let remindersSent = { "24h": 0, "1h": 0 };
 
@@ -344,14 +363,15 @@ export const testCheckReminders = internalAction({
       for (const appointment of allAppointments) {
         try {
           const appointmentDate = new Date(appointment.dateTime);
-          const hoursUntilAppointment = (appointmentDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+          const hoursUntil = hoursUntilAppointment(appointmentDate, now);
           
-          console.log(`TEST: Processing appointment ${appointment._id} - ${hoursUntilAppointment.toFixed(2)} hours until appointment`);
+          console.log(`TEST: Processing appointment ${appointment._id} - ${hoursUntil.toFixed(2)} hours until appointment`);
 
           // Check if appointment needs 24h reminder
-          if (hoursUntilAppointment >= REMINDER_24H_WINDOW_START && hoursUntilAppointment < REMINDER_24H_WINDOW_END) {
+          if (isWithinWindow("24h", hoursUntil)) {
             console.log(`TEST: ⏰ Appointment ${appointment._id} is in 24h reminder window`);
-            // Check if 24h reminder already sent
+            
+            // Check if 24h reminder already sent (includes bookings within the 24h window)
             const existingReminder = await ctx.runQuery(
               internal.reminders.checkReminderSent,
               {
@@ -398,15 +418,19 @@ export const testCheckReminders = internalAction({
             }
           } else {
             // Log why 24h reminder wasn't sent
-            if (hoursUntilAppointment >= REMINDER_24H_WINDOW_END) {
-              console.log(`TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntilAppointment.toFixed(2)} hours away (>= ${REMINDER_24H_WINDOW_END}h), not in 24h reminder window (${REMINDER_24H_WINDOW_START}-${REMINDER_24H_WINDOW_END}h)`);
-            } else if (hoursUntilAppointment < REMINDER_24H_WINDOW_START) {
-              console.log(`TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntilAppointment.toFixed(2)} hours away (< ${REMINDER_24H_WINDOW_START}h), not in 24h reminder window (${REMINDER_24H_WINDOW_START}-${REMINDER_24H_WINDOW_END}h)`);
+            if (hoursUntil >= REMINDER_WINDOWS_HOURS["24h"].endExclusive) {
+              console.log(
+                `TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntil.toFixed(2)} hours away (>= ${REMINDER_WINDOWS_HOURS["24h"].endExclusive}h), not in 24h reminder window (${REMINDER_WINDOWS_HOURS["24h"].startInclusive}-${REMINDER_WINDOWS_HOURS["24h"].endExclusive}h)`
+              );
+            } else if (hoursUntil < REMINDER_WINDOWS_HOURS["24h"].startInclusive) {
+              console.log(
+                `TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntil.toFixed(2)} hours away (< ${REMINDER_WINDOWS_HOURS["24h"].startInclusive}h), not in 24h reminder window (${REMINDER_WINDOWS_HOURS["24h"].startInclusive}-${REMINDER_WINDOWS_HOURS["24h"].endExclusive}h)`
+              );
             }
           }
 
           // Check if appointment needs 1h reminder
-          if (hoursUntilAppointment >= REMINDER_1H_WINDOW_START && hoursUntilAppointment < REMINDER_1H_WINDOW_END) {
+          if (isWithinWindow("1h", hoursUntil)) {
             console.log(`TEST: ⏰ Appointment ${appointment._id} is in 1h reminder window`);
             // Check if 1h reminder already sent
             const existingReminder = await ctx.runQuery(
@@ -455,10 +479,17 @@ export const testCheckReminders = internalAction({
             }
           } else {
             // Log why 1h reminder wasn't sent (only if it's close enough to be relevant)
-            if (hoursUntilAppointment >= REMINDER_1H_WINDOW_END && hoursUntilAppointment < REMINDER_1H_WINDOW_END + 0.5) {
-              console.log(`TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntilAppointment.toFixed(2)} hours away (>= ${REMINDER_1H_WINDOW_END}h), not in 1h reminder window (${REMINDER_1H_WINDOW_START}-${REMINDER_1H_WINDOW_END}h)`);
-            } else if (hoursUntilAppointment < REMINDER_1H_WINDOW_START && hoursUntilAppointment >= 0) {
-              console.log(`TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntilAppointment.toFixed(2)} hours away (< ${REMINDER_1H_WINDOW_START}h), not in 1h reminder window (${REMINDER_1H_WINDOW_START}-${REMINDER_1H_WINDOW_END}h)`);
+            if (
+              hoursUntil >= REMINDER_WINDOWS_HOURS["1h"].endExclusive &&
+              hoursUntil < REMINDER_WINDOWS_HOURS["1h"].endExclusive + 0.5
+            ) {
+              console.log(
+                `TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntil.toFixed(2)} hours away (>= ${REMINDER_WINDOWS_HOURS["1h"].endExclusive}h), not in 1h reminder window (${REMINDER_WINDOWS_HOURS["1h"].startInclusive}-${REMINDER_WINDOWS_HOURS["1h"].endExclusive}h)`
+              );
+            } else if (hoursUntil < REMINDER_WINDOWS_HOURS["1h"].startInclusive && hoursUntil >= 0) {
+              console.log(
+                `TEST: ⏭️ Appointment ${appointment._id} is ${hoursUntil.toFixed(2)} hours away (< ${REMINDER_WINDOWS_HOURS["1h"].startInclusive}h), not in 1h reminder window (${REMINDER_WINDOWS_HOURS["1h"].startInclusive}-${REMINDER_WINDOWS_HOURS["1h"].endExclusive}h)`
+              );
             }
           }
         } catch (error) {
@@ -506,6 +537,28 @@ export const getAllFutureAppointments = internalQuery({
       .collect();
     
     return allAppointments;
+  },
+});
+
+/**
+ * Query: Get appointments in a specific dateTime range [startISO, endISO).
+ *
+ * Uses the `appointments.by_dateTime` index so the query scales with the size of the window,
+ * not the total number of future appointments.
+ */
+export const getAppointmentsInRange = internalQuery({
+  args: {
+    startISO: v.string(),
+    endISO: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const appts = await ctx.db
+      .query("appointments")
+      .withIndex("by_dateTime", (q) =>
+        q.gte("dateTime", args.startISO).lt("dateTime", args.endISO)
+      )
+      .collect();
+    return appts;
   },
 });
 
@@ -561,6 +614,176 @@ export const recordReminderSent = internalMutation({
       sentAt: new Date().toISOString(),
       teamId: args.teamId,
     });
+  },
+});
+
+/**
+ * PUBLIC Mutation: Mark 24h reminder as "sent" if appointment is booked within the 24h window.
+ * 
+ * This prevents double-notification when a user books within the 24h window:
+ * - They get a schedule confirmation immediately
+ * - The cron would also try to send a 24h reminder (redundant)
+ * 
+ * By recording the 24h reminder as "sent" at booking time, the cron's
+ * `checkReminderSent` query returns true and skips the reminder.
+ * 
+ * Called from the appointments API after creating an appointment.
+ */
+export const markReminderSentIfInWindow = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    appointmentDateTime: v.string(), // ISO string
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args): Promise<{ marked24h: boolean }> => {
+    const now = new Date();
+    const appointmentDate = new Date(args.appointmentDateTime);
+    const hoursUntil = hoursUntilAppointment(appointmentDate, now);
+
+    // Check if appointment is within the 24h reminder window
+    if (isWithinWindow("24h", hoursUntil, REMINDER_WINDOWS_HOURS)) {
+      // Record as if we already sent the 24h reminder (since they got the confirmation)
+      await ctx.db.insert("reminders", {
+        appointmentId: args.appointmentId,
+        patientId: args.patientId,
+        reminderType: "24h",
+        targetDate: args.appointmentDateTime,
+        sentAt: now.toISOString(),
+        teamId: args.teamId,
+      });
+      console.log(
+        `Marked 24h reminder as sent for appointment ${args.appointmentId} (booked ${hoursUntil.toFixed(1)}h in advance)`
+      );
+      return { marked24h: true };
+    }
+
+    return { marked24h: false };
+  },
+});
+
+/**
+ * DEV/TEST HELPER: Seed appointments that fall into the reminder windows.
+ *
+ * This is useful for validating reminder behavior locally with `testCheckReminders`.
+ * It creates:
+ * - 1 shared team
+ * - N patients + appointments ~1 hour away (actually 65 minutes by default)
+ * - M patients + appointments ~24 hours away (actually 24h10m by default)
+ *
+ * Usage:
+ * - Convex dashboard → Functions → reminders → seedRemindersTestData → Run
+ * - OR CLI: `npx convex run internal.reminders.seedRemindersTestData '{"count1h":2,"count24h":2}'`
+ */
+export const seedRemindersTestData = internalMutation({
+  args: {
+    count1h: v.optional(v.number()),
+    count24h: v.optional(v.number()),
+    minutesFromNowFor1h: v.optional(v.number()),
+    minutesFromNowFor24h: v.optional(v.number()),
+    reuseTeamName: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{
+    teamId: Id<"teams">;
+    now: string;
+    seeded: {
+      "1h": Array<{
+        appointmentId: Id<"appointments">;
+        patientId: Id<"patients">;
+        phone: string;
+        name: string;
+        dateTime: string;
+      }>;
+      "24h": Array<{
+        appointmentId: Id<"appointments">;
+        patientId: Id<"patients">;
+        phone: string;
+        name: string;
+        dateTime: string;
+      }>;
+    };
+    windowsHours: typeof REMINDER_WINDOWS_HOURS;
+    note: string;
+  }> => {
+    // Safety: seeding is for local/dev only.
+    assertDevEnvironment("seedRemindersTestData");
+
+    const count1h = args.count1h ?? 2;
+    const count24h = args.count24h ?? 2;
+    const minutesFromNowFor1h = args.minutesFromNowFor1h ?? 65; // within 0.5h-2h window
+    const minutesFromNowFor24h = args.minutesFromNowFor24h ?? (24 * 60 + 10); // within 23h-25h window
+    const teamName = args.reuseTeamName ?? "Seed Team";
+
+    const now = new Date();
+    const basePhone = 5550100000 + Math.floor(Math.random() * 9000);
+
+    // Create a team (simple and isolated). For dev-only seeding, duplicates are OK.
+    const teamId = await ctx.db.insert("teams", { name: teamName });
+
+    const makeAppointment = async (
+      i: number,
+      minutesFromNow: number
+    ): Promise<{
+      appointmentId: Id<"appointments">;
+      patientId: Id<"patients">;
+      phone: string;
+      name: string;
+      dateTime: string;
+    }> => {
+      const phone = `+1${basePhone + i}`;
+      const patientName = `Seed Patient ${i + 1}`;
+      const appointmentDateTime = new Date(now.getTime() + minutesFromNow * 60 * 1000).toISOString();
+
+      const patientId = await ctx.db.insert("patients", {
+        phone,
+        name: patientName,
+        teamId,
+      });
+
+      const appointmentId = await ctx.db.insert("appointments", {
+        patientId,
+        dateTime: appointmentDateTime,
+        teamId,
+        notes: `Seeded for reminders test (${minutesFromNow}m from now)`,
+      });
+
+      return { appointmentId, patientId, phone, name: patientName, dateTime: appointmentDateTime };
+    };
+
+    const seeded1h: Array<{
+      appointmentId: Id<"appointments">;
+      patientId: Id<"patients">;
+      phone: string;
+      name: string;
+      dateTime: string;
+    }> = [];
+    for (let i = 0; i < count1h; i++) {
+      seeded1h.push(await makeAppointment(i, minutesFromNowFor1h));
+    }
+
+    const seeded24h: Array<{
+      appointmentId: Id<"appointments">;
+      patientId: Id<"patients">;
+      phone: string;
+      name: string;
+      dateTime: string;
+    }> = [];
+    for (let i = 0; i < count24h; i++) {
+      // Offset index to avoid duplicate phone numbers between buckets
+      seeded24h.push(await makeAppointment(count1h + i, minutesFromNowFor24h));
+    }
+
+    return {
+      teamId,
+      now: now.toISOString(),
+      seeded: {
+        "1h": seeded1h,
+        "24h": seeded24h,
+      },
+      windowsHours: REMINDER_WINDOWS_HOURS,
+      note:
+        "Run internal.reminders.testCheckReminders next to see reminders picked up. If GHL_SMS_WEBHOOK_URL is unset, sends are skipped but reminders can still be recorded if sendSMSWebhook returns true.",
+    };
   },
 });
 
