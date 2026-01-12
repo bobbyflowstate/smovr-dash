@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { logAppointmentCreated, createLogger } from "./logger";
 
 export const scheduleAppointment = mutation({
   args: {
@@ -11,7 +12,11 @@ export const scheduleAppointment = mutation({
     userEmail: v.string(), // Pass user email from the authenticated session
   },
   handler: async (ctx, args) => {
-    console.log("scheduleAppointment: Starting mutation for user:", args.userEmail);
+    const logger = createLogger({ operation: "scheduleAppointment", userEmail: args.userEmail });
+    logger.debug("Starting appointment scheduling", {
+      phone: args.phone.replace(/(\d{3})(\d{3})(\d{4})/, "***-***-$3"),
+      dateTime: args.appointmentDateTime,
+    });
 
     // Look up the user by their email (which should be linked to their Logto ID)
     const user = await ctx.db
@@ -20,10 +25,11 @@ export const scheduleAppointment = mutation({
       .unique();
 
     if (!user) {
+      logger.error("User not found in database", { userEmail: args.userEmail });
       throw new Error("User not found in database. Please contact support.");
     }
 
-    console.log("scheduleAppointment: Found user:", user._id);
+    logger.debug("Found user", { userId: user._id, teamId: user.teamId });
     const teamId = user.teamId;
 
     // Check if patient already exists in the team
@@ -39,6 +45,7 @@ export const scheduleAppointment = mutation({
       patientId = existingPatient._id;
       // Update the patient's name (overwrite)
       await ctx.db.patch(patientId, { name: args.name });
+      logger.debug("Updated existing patient", { patientId });
     } else {
       // Create a new patient with name
       patientId = await ctx.db.insert("patients", {
@@ -46,6 +53,7 @@ export const scheduleAppointment = mutation({
         name: args.name,
         teamId,
       });
+      logger.debug("Created new patient", { patientId });
     }
 
     // Check if appointment already exists for this patient at this time
@@ -62,7 +70,11 @@ export const scheduleAppointment = mutation({
 
     if (existingAppointment) {
       // Appointment already exists, do nothing
-      console.log("Appointment already exists for patient:", patientId);
+      logger.info("Appointment already exists", {
+        appointmentId: existingAppointment._id,
+        patientId,
+        teamId,
+      });
       return { patientId, appointmentId: existingAppointment._id, teamId, newAppointment: false };
     }
 
@@ -75,7 +87,9 @@ export const scheduleAppointment = mutation({
       teamId,
     });
 
-    console.log("Created new appointment:", appointmentId);
+    logAppointmentCreated(appointmentId, patientId, teamId, args.appointmentDateTime, {
+      userEmail: args.userEmail,
+    });
 
     return { patientId, appointmentId, teamId, newAppointment: true };
   },

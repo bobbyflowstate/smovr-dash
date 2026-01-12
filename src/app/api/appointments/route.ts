@@ -10,6 +10,7 @@ import {
   convertComponentsToTimezoneUTC,
 } from '@/lib/timezone-utils';
 import { sendScheduleWebhook } from '@/lib/webhook-utils';
+import { logAuthFailure, createLogger } from '../../../../convex/logger';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -20,21 +21,29 @@ export async function GET() {
     const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
     
     if (!isAuthenticated || !claims?.email) {
+      logAuthFailure("Not authenticated or missing email", undefined, { operation: "GET /api/appointments" }, "vercel");
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const userEmail = claims.email; // 🔑 Server-controlled user identity
-    
-    console.log('API: Getting appointments for user:', userEmail);
+    const getLogger = createLogger({ operation: "GET /api/appointments", userEmail }, "vercel");
+    getLogger.debug("Getting appointments for user");
 
     // 🔒 Server calls Convex with validated user email
     const result = await convex.query(api.appointments.get, { 
       userEmail 
     });
 
+    if (result && typeof result === 'object' && 'appointments' in result) {
+      getLogger.info("Successfully fetched appointments", {
+        appointmentCount: Array.isArray(result.appointments) ? result.appointments.length : 0,
+      });
+    }
+
     return NextResponse.json(result);
   } catch (error) {
-    console.error('Error fetching appointments:', error);
+    const logger = createLogger({ operation: "GET /api/appointments" }, "vercel");
+    logger.error("Error fetching appointments", {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -54,7 +63,15 @@ export async function POST(request: NextRequest) {
     const logtoUserId = claims.sub;
     const body = await request.json();
 
-    console.log('API: Creating appointment for user:', userEmail);
+    const postLogger = createLogger({ operation: "POST /api/appointments", userEmail }, "vercel");
+    // Only mask phone if it's a string (validation happens later)
+    if (typeof body.phone === "string") {
+      postLogger.debug("Creating appointment", {
+        phone: body.phone.replace(/(\d{3})(\d{3})(\d{4})/, "***-***-$3"),
+      });
+    } else {
+      postLogger.debug("Creating appointment", { phone: body.phone });
+    }
 
     // Convert appointment time to configured timezone
     // User submits local time components, which we reinterpret as being in the configured timezone
@@ -162,12 +179,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    postLogger.info("Appointment created successfully", {
+      appointmentId: result.appointmentId,
+      newAppointment: result.newAppointment,
+    });
+
     return NextResponse.json({
       ...result,
       teamName: userInfo?.teamName || "Unknown Team"
     });
   } catch (error) {
-    console.error('Error creating appointment:', error);
+    const errorLogger = createLogger({ operation: "POST /api/appointments" }, "vercel");
+    errorLogger.error("Error creating appointment", {}, error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : 'Internal server error' 
     }, { status: 500 });
