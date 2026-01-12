@@ -149,6 +149,17 @@ export async function POST(request: NextRequest) {
         body.phone,
         body.name || null
       );
+
+      // If booked within the 24h reminder window, mark the 24h reminder as "sent"
+      // This prevents double-notification (confirmation + 24h reminder)
+      if (result.teamId) {
+        await convex.mutation(api.reminders.markReminderSentIfInWindow, {
+          appointmentId: result.appointmentId as Id<"appointments">,
+          patientId: result.patientId as Id<"patients">,
+          appointmentDateTime: timezoneConvertedDateTime,
+          teamId: result.teamId as Id<"teams">,
+        });
+      }
     }
 
     return NextResponse.json({

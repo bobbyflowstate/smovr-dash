@@ -63,7 +63,7 @@ export const scheduleAppointment = mutation({
     if (existingAppointment) {
       // Appointment already exists, do nothing
       console.log("Appointment already exists for patient:", patientId);
-      return { patientId, appointmentId: existingAppointment._id, newAppointment: false };
+      return { patientId, appointmentId: existingAppointment._id, teamId, newAppointment: false };
     }
 
     // Create a new appointment
@@ -77,7 +77,7 @@ export const scheduleAppointment = mutation({
 
     console.log("Created new appointment:", appointmentId);
 
-    return { patientId, appointmentId, newAppointment: true };
+    return { patientId, appointmentId, teamId, newAppointment: true };
   },
 });
 

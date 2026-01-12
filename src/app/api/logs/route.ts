@@ -8,6 +8,7 @@ import { isValidAction, LOG_MESSAGES, type LogAction } from '@/lib/log-actions';
 import { APPOINTMENT_TIMEZONE, extractComponentsInTimezone } from '@/lib/timezone-utils';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const DEFAULT_TEAM_CONTACT_PHONE = process.env.DEFAULT_TEAM_CONTACT_PHONE;
 
 // GET /api/logs - Get logs for user's team (authenticated)
 export async function GET() {
@@ -84,6 +85,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
     }
 
+    // Try to include a contact phone for the clinic/team (used by the public landing pages)
+    const team = await convex.query(api.teams.getById, {
+      teamId: appointment.teamId,
+    });
+    const contactPhone = team?.contactPhone || DEFAULT_TEAM_CONTACT_PHONE || null;
+
     // Check if appointment date has passed (next day or later)
     // We allow late submissions on the same day, even if the appointment time has passed
     // Compare dates in the clinic's timezone, not server's local timezone
@@ -107,7 +114,10 @@ export async function POST(request: NextRequest) {
     );
     
     if (appointmentDateOnly < todayDateOnly) {
-      return NextResponse.json({ error: 'Appointment has already passed' }, { status: 410 }); // 410 Gone
+      return NextResponse.json(
+        { error: 'Appointment has already passed', contactPhone },
+        { status: 410 }
+      ); // 410 Gone
     }
 
     // Get message from constants
@@ -122,7 +132,7 @@ export async function POST(request: NextRequest) {
       teamId: appointment.teamId,
     });
 
-    return NextResponse.json({ success: true, logId });
+    return NextResponse.json({ success: true, logId, contactPhone });
   } catch (error) {
     console.error('Error creating log:', error);
     return NextResponse.json({ 

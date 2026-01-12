@@ -8,11 +8,18 @@ export type ReminderWindowsHours = Record<
 /**
  * Reminder windows (in hours before appointment).
  *
- * These are intentionally wide to avoid missing reminders due to cron timing.
- * They should match the logic in `convex/reminders.ts`.
+ * These are intentionally wide to avoid missing reminders due to:
+ * - Cron timing (appointment booked just after a tick)
+ * - Quiet hours (overnight periods when SMS isn't sent)
+ * - Same-day bookings (booked < 24h in advance)
+ *
+ * The 24h window (12-25h) ensures:
+ * - Bookings made up to 12h in advance still get a "day-before" reminder
+ * - Survives 10+ hour overnight quiet hours
+ * - Still semantically a "24h / day-before" reminder
  */
 export const REMINDER_WINDOWS_HOURS: ReminderWindowsHours = {
-  "24h": { startInclusive: 23, endExclusive: 25 },
+  "24h": { startInclusive: 12, endExclusive: 25 },
   "1h": { startInclusive: 0.5, endExclusive: 2 },
 };
 

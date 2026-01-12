@@ -8,6 +8,7 @@ export type AppointmentStatus = "loading" | "success" | "error" | "not-found" | 
 export function useAppointmentAction(appointmentId: string | undefined, action: LogAction) {
   const [status, setStatus] = useState<AppointmentStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
+  const [contactPhone, setContactPhone] = useState<string | undefined>(undefined);
   const hasLogged = useRef(false);
 
   useEffect(() => {
@@ -29,6 +30,11 @@ export function useAppointmentAction(appointmentId: string | undefined, action: 
           }),
         });
 
+        const responseData: any = await response.json().catch(() => ({}));
+        if (responseData?.contactPhone) {
+          setContactPhone(responseData.contactPhone);
+        }
+
         if (response.status === 404) {
           setStatus("not-found");
           return;
@@ -42,8 +48,7 @@ export function useAppointmentAction(appointmentId: string | undefined, action: 
 
         if (!response.ok) {
           // Other errors (500, network failures, etc.) should throw to be caught below
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Failed to log action: ${response.status}`);
+          throw new Error(responseData?.error || `Failed to log action: ${response.status}`);
         }
 
         setStatus("success");
@@ -57,7 +62,7 @@ export function useAppointmentAction(appointmentId: string | undefined, action: 
     checkAndLogAction();
   }, [appointmentId, action]);
 
-  return { status, errorMessage };
+  return { status, errorMessage, contactPhone };
 }
 
 

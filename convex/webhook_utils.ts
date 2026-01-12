@@ -13,6 +13,21 @@ import { Id } from "./_generated/dataModel";
 // Webhook timeout constant (in milliseconds)
 const WEBHOOK_TIMEOUT_MS = 10000; // 10 seconds
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 500; // doubles each retry: 500ms, 1s, 2s
+
+/** Sleep helper for backoff delays */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Check if an HTTP status code should trigger a retry */
+function isRetryableStatus(status: number): boolean {
+  // Retry on server errors (5xx) and rate limiting (429)
+  return status >= 500 || status === 429;
+}
+
 interface SMSWebhookPayload {
   phone: string;
   message: string;
@@ -72,6 +87,8 @@ export function formatAppointmentDateTime(appointmentDate: Date, timezone: strin
 
 /**
  * Unified webhook function that sends SMS message to GoHighLevel
+ * Includes automatic retry with exponential backoff for transient failures.
+ * 
  * @returns true if webhook was sent successfully, false otherwise
  */
 export async function sendSMSWebhook(phone: string, message: string): Promise<boolean> {
@@ -82,42 +99,78 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
     return false;
   }
 
-  // Create abort controller for webhook timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+  const payload: SMSWebhookPayload = { phone, message };
+  let lastError: Error | null = null;
+  let lastStatus: number | null = null;
 
-  try {
-    const payload: SMSWebhookPayload = { phone, message };
-    console.log('Sending SMS webhook to:', webhookUrl);
-    console.log('SMS webhook payload:', payload);
-
-    const webhookResponse = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (webhookResponse.ok) {
-      console.log('SMS webhook sent successfully');
-      return true;
-    } else {
-      console.error('SMS webhook failed with status:', webhookResponse.status);
-      return false;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Apply backoff delay before retries (not on first attempt)
+    if (attempt > 0) {
+      const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
+      console.log(`SMS webhook retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms backoff`);
+      await sleep(backoffMs);
     }
-  } catch (webhookError) {
-    clearTimeout(timeoutId);
-    if (webhookError instanceof Error && webhookError.name === 'AbortError') {
-      console.error(`SMS webhook request timed out after ${WEBHOOK_TIMEOUT_MS / 1000} seconds`);
-    } else {
-      console.error('Error sending SMS webhook:', webhookError);
+
+    // Create abort controller for webhook timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+
+    try {
+      if (attempt === 0) {
+        console.log('Sending SMS webhook to:', webhookUrl);
+        console.log('SMS webhook payload:', payload);
+      }
+
+      const webhookResponse = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (webhookResponse.ok) {
+        if (attempt > 0) {
+          console.log(`SMS webhook sent successfully on retry ${attempt}`);
+        } else {
+          console.log('SMS webhook sent successfully');
+        }
+        return true;
+      }
+
+      // Check if we should retry this status code
+      lastStatus = webhookResponse.status;
+      if (!isRetryableStatus(webhookResponse.status)) {
+        // 4xx errors won't succeed on retry - fail immediately
+        console.error(`SMS webhook failed with non-retryable status: ${webhookResponse.status}`);
+        return false;
+      }
+
+      console.warn(`SMS webhook failed with retryable status: ${webhookResponse.status}`);
+      // Continue to next retry attempt
+    } catch (webhookError) {
+      clearTimeout(timeoutId);
+      lastError = webhookError instanceof Error ? webhookError : new Error(String(webhookError));
+
+      if (lastError.name === 'AbortError') {
+        console.warn(`SMS webhook request timed out (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      } else {
+        console.warn(`SMS webhook error (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, lastError.message);
+      }
+      // Continue to next retry attempt
     }
-    return false;
   }
+
+  // All retries exhausted
+  if (lastError) {
+    console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last error:`, lastError.message);
+  } else if (lastStatus) {
+    console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last status: ${lastStatus}`);
+  }
+  return false;
 }
 
 /**

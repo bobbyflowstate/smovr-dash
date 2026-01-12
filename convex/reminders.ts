@@ -1,4 +1,4 @@
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
@@ -193,7 +193,7 @@ export const checkAndSendReminders = internalAction({
 
         // Check if appointment needs 24h reminder
         if (isWithinWindow("24h", hoursUntil)) {
-          // Check if 24h reminder already sent
+          // Check if 24h reminder already sent (includes bookings within the 24h window)
           const existingReminder = await ctx.runQuery(
             internal.reminders.checkReminderSent,
             {
@@ -370,7 +370,8 @@ export const testCheckReminders = internalAction({
           // Check if appointment needs 24h reminder
           if (isWithinWindow("24h", hoursUntil)) {
             console.log(`TEST: ⏰ Appointment ${appointment._id} is in 24h reminder window`);
-            // Check if 24h reminder already sent
+            
+            // Check if 24h reminder already sent (includes bookings within the 24h window)
             const existingReminder = await ctx.runQuery(
               internal.reminders.checkReminderSent,
               {
@@ -613,6 +614,51 @@ export const recordReminderSent = internalMutation({
       sentAt: new Date().toISOString(),
       teamId: args.teamId,
     });
+  },
+});
+
+/**
+ * PUBLIC Mutation: Mark 24h reminder as "sent" if appointment is booked within the 24h window.
+ * 
+ * This prevents double-notification when a user books within the 24h window:
+ * - They get a schedule confirmation immediately
+ * - The cron would also try to send a 24h reminder (redundant)
+ * 
+ * By recording the 24h reminder as "sent" at booking time, the cron's
+ * `checkReminderSent` query returns true and skips the reminder.
+ * 
+ * Called from the appointments API after creating an appointment.
+ */
+export const markReminderSentIfInWindow = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    appointmentDateTime: v.string(), // ISO string
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args): Promise<{ marked24h: boolean }> => {
+    const now = new Date();
+    const appointmentDate = new Date(args.appointmentDateTime);
+    const hoursUntil = hoursUntilAppointment(appointmentDate, now);
+
+    // Check if appointment is within the 24h reminder window
+    if (isWithinWindow("24h", hoursUntil, REMINDER_WINDOWS_HOURS)) {
+      // Record as if we already sent the 24h reminder (since they got the confirmation)
+      await ctx.db.insert("reminders", {
+        appointmentId: args.appointmentId,
+        patientId: args.patientId,
+        reminderType: "24h",
+        targetDate: args.appointmentDateTime,
+        sentAt: now.toISOString(),
+        teamId: args.teamId,
+      });
+      console.log(
+        `Marked 24h reminder as sent for appointment ${args.appointmentId} (booked ${hoursUntil.toFixed(1)}h in advance)`
+      );
+      return { marked24h: true };
+    }
+
+    return { marked24h: false };
   },
 });
 

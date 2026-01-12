@@ -137,6 +137,117 @@ describe("convex/webhook_utils (sendSMSWebhook)", () => {
     expect(ok).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("retries on 5xx server errors and succeeds on retry", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const fetchSpy = vi.fn(async () => {
+      callCount++;
+      if (callCount < 3) {
+        return new Response(null, { status: 503 }); // Service unavailable
+      }
+      return new Response(null, { status: 200 }); // Success on 3rd attempt
+    });
+    globalThis.fetch = fetchSpy as any;
+
+    const promise = sendSMSWebhook("+15551234567", "hello");
+    
+    // Fast-forward through backoff delays
+    await vi.runAllTimersAsync();
+    
+    const ok = await promise;
+
+    expect(ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+
+    vi.useRealTimers();
+  });
+
+  it("retries on 429 rate limit and succeeds on retry", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const fetchSpy = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response(null, { status: 429 }); // Rate limited
+      }
+      return new Response(null, { status: 200 }); // Success on 2nd attempt
+    });
+    globalThis.fetch = fetchSpy as any;
+
+    const promise = sendSMSWebhook("+15551234567", "hello");
+    await vi.runAllTimersAsync();
+    const ok = await promise;
+
+    expect(ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it("does NOT retry on 4xx client errors (except 429)", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+
+    const fetchSpy = vi.fn(async () => {
+      return new Response(null, { status: 400 }); // Bad request - not retryable
+    });
+    globalThis.fetch = fetchSpy as any;
+
+    const ok = await sendSMSWebhook("+15551234567", "hello");
+
+    expect(ok).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // No retries
+  });
+
+  it("retries on network errors and fails after max retries", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+    vi.useFakeTimers();
+
+    const fetchSpy = vi.fn(async () => {
+      throw new Error("Network error");
+    });
+    globalThis.fetch = fetchSpy as any;
+
+    const promise = sendSMSWebhook("+15551234567", "hello");
+    await vi.runAllTimersAsync();
+    const ok = await promise;
+
+    expect(ok).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+
+    vi.useRealTimers();
+  });
+
+  it("retries on timeout and succeeds on retry", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      callCount++;
+      if (callCount === 1) {
+        // Simulate timeout by aborting
+        const error = new Error("Aborted");
+        error.name = "AbortError";
+        throw error;
+      }
+      return new Response(null, { status: 200 });
+    });
+    globalThis.fetch = fetchSpy as any;
+
+    const promise = sendSMSWebhook("+15551234567", "hello");
+    await vi.runAllTimersAsync();
+    const ok = await promise;
+
+    expect(ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
 });
 
 
