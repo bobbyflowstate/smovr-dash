@@ -172,8 +172,6 @@ export const checkAndSendReminders = internalAction({
     // Check quiet hours first
     // NOTE: Quiet hours are enforced as 10pm–5am in clinic timezone.
     // We intentionally ignore SMS_QUIET_HOURS_START/END env vars here to avoid configuration drift.
-    const quietStartStr = process.env.SMS_QUIET_HOURS_START;
-    const quietEndStr = process.env.SMS_QUIET_HOURS_END;
     const quietStart = DEFAULT_QUIET_HOURS_START;
     const quietEnd = DEFAULT_QUIET_HOURS_END;
     
@@ -184,9 +182,7 @@ export const checkAndSendReminders = internalAction({
       !isNaN(quietStart) && !isNaN(quietEnd) && validateQuietHours(quietStart, quietEnd);
 
     console.log(
-      `Reminders cron: quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} (timezone is per-team; envProvided=${Boolean(
-        quietStartStr && quietEndStr
-      )} provided=${quietStartStr || "unset"}-${quietEndStr || "unset"})`
+      `Reminders cron: quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} (timezone is per-team)`
     );
 
     if (!quietHoursValid) {
@@ -1346,7 +1342,7 @@ export const markReminderSentIfInWindow = mutation({
     };
 
     // Only suppress the 24h reminder if booking confirmation was sent within 24h–24h45m.
-    if (hoursUntil >= BOOKING_SUPPRESS_24H_START && hoursUntil <= BOOKING_SUPPRESS_24H_END) {
+    if (hoursUntil >= BOOKING_SUPPRESS_24H_START && hoursUntil < BOOKING_SUPPRESS_24H_END) {
       marked.marked24h = await maybeInsertSuppression("24h");
       if (marked.marked24h) {
         console.log(
@@ -1358,7 +1354,7 @@ export const markReminderSentIfInWindow = mutation({
     }
 
     // Only suppress the 1h reminder if booking confirmation was sent within 1h–1h45m.
-    if (hoursUntil >= BOOKING_SUPPRESS_1H_START && hoursUntil <= BOOKING_SUPPRESS_1H_END) {
+    if (hoursUntil >= BOOKING_SUPPRESS_1H_START && hoursUntil < BOOKING_SUPPRESS_1H_END) {
       marked.marked1h = await maybeInsertSuppression("1h");
       if (marked.marked1h) {
         console.log(

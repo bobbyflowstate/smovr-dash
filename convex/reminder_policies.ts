@@ -27,13 +27,17 @@ export type ReminderAttemptReasonCode =
 export const DEFAULT_QUIET_HOURS_START = 22; // 10pm
 export const DEFAULT_QUIET_HOURS_END = 5; // 5am
 
+function hoursFromMinutes(minutes: number): number {
+  return minutes / 60;
+}
+
 // Booking-confirmation suppression windows (in hours before appointment).
 // If the appointment is booked within these windows and the booking confirmation SMS succeeds,
 // we suppress the corresponding reminder to avoid double-texting.
 //
 // Keep the 24h suppression aligned to the 24h reminder send window (23h50m–24h10m).
-export const BOOKING_SUPPRESS_24H_START = 1430 / 60; // 23h50m
-export const BOOKING_SUPPRESS_24H_END = 1450 / 60; // 24h10m
+export const BOOKING_SUPPRESS_24H_START = hoursFromMinutes(23 * 60 + 50); // 23h50m
+export const BOOKING_SUPPRESS_24H_END = hoursFromMinutes(24 * 60 + 10); // 24h10m
 export const BOOKING_SUPPRESS_1H_START = 1; // 1h
 export const BOOKING_SUPPRESS_1H_END = 1.25; // 1h15m
 

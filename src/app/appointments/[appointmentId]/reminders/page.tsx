@@ -5,6 +5,10 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { APPOINTMENT_TIMEZONE, getTimezoneDisplayName } from "@/lib/timezone-utils";
 import { REMINDER_WINDOWS_HOURS } from "../../../../../convex/reminder_logic";
+import {
+  DEFAULT_QUIET_HOURS_END,
+  DEFAULT_QUIET_HOURS_START,
+} from "../../../../../convex/reminder_policies";
 
 type ReminderAttempt = {
   _id: string;
@@ -37,9 +41,6 @@ type ExpectedReminderRow = {
   summary: string;
   expectedBehavior: string;
 };
-
-const QUIET_HOURS_START = 22; // 10pm
-const QUIET_HOURS_END = 5; // 5am
 
 function getHourInTimezone(date: Date, timezone: string): number {
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -222,8 +223,8 @@ export default function ReminderAttemptsPage() {
         start: windowStart,
         end: windowEnd,
         timezone: APPOINTMENT_TIMEZONE,
-        quietStart: QUIET_HOURS_START,
-        quietEnd: QUIET_HOURS_END,
+        quietStart: DEFAULT_QUIET_HOURS_START,
+        quietEnd: DEFAULT_QUIET_HOURS_END,
       });
 
       let expectedBehavior = "";
@@ -268,7 +269,11 @@ export default function ReminderAttemptsPage() {
               Appointment ID: <span className="font-mono">{appointmentId}</span>
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Quiet hours: <span className="font-semibold">10pm–5am</span> ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})
+              Quiet hours:{" "}
+              <span className="font-semibold">
+                10pm–5am
+              </span>{" "}
+              ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})
             </p>
           </div>
           <Link

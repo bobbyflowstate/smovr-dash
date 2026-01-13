@@ -202,7 +202,7 @@ describe("UTC/timezone handling", () => {
     
     const hours = hoursUntil(appointmentDate, now);
     expect(hours).toBeCloseTo(24, 1);
-    expect(isWithinWindow("24h", hours)).toBe(true); // 24h is within 23h50m–24h10m window
+    expect(isWithinWindow("24h", hours)).toBe(true); // 24h is within the configured 24h reminder window
   });
 
   it("booking at 10 AM Eastern for 8 PM Pacific same day is NOT in 24h window (too close)", () => {
