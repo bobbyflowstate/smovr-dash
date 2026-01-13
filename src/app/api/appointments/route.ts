@@ -6,7 +6,6 @@ import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { extractDisplayName } from '@/lib/auth-utils';
 import {
-  APPOINTMENT_TIMEZONE,
   convertComponentsToTimezoneUTC,
 } from '@/lib/timezone-utils';
 import { sendScheduleWebhook } from '@/lib/webhook-utils';
@@ -56,6 +55,23 @@ export async function POST(request: NextRequest) {
 
     console.log('API: Creating appointment for user:', userEmail);
 
+    // Ensure user exists first (also creates team on first run)
+    await convex.mutation(api.users.getOrCreateUserByEmail, {
+      email: userEmail,
+      name: userName,
+      logtoUserId,
+    });
+
+    // Load team settings (timezone/address) to interpret appointment time correctly
+    const userInfo = await convex.query(api.users.getUserWithTeam, {
+      userEmail,
+    });
+    const team = userInfo?.teamId
+      ? await convex.query(api.teams.getById, { teamId: userInfo.teamId as Id<"teams"> })
+      : null;
+    const teamTimezone =
+      team?.timezone || process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
+
     // Convert appointment time to configured timezone
     // User submits local time components, which we reinterpret as being in the configured timezone
     // This ensures appointments are stored correctly regardless of user's timezone
@@ -71,7 +87,7 @@ export async function POST(request: NextRequest) {
         hour,
         minute,
         second || 0,
-        APPOINTMENT_TIMEZONE
+        teamTimezone
       );
     } else {
       // Fallback: extract from UTC ISO string (less accurate, but backward compatible)
@@ -90,16 +106,9 @@ export async function POST(request: NextRequest) {
         hour,
         minute,
         second,
-        APPOINTMENT_TIMEZONE
+        teamTimezone
       );
     }
-
-    // 🔒 Ensure user exists first
-    await convex.mutation(api.users.getOrCreateUserByEmail, {
-      email: userEmail,
-      name: userName,
-      logtoUserId,
-    });
 
     // Check for existing future appointments for this patient (unless user has confirmed cancellation)
     if (!body.skipExistingCheck) {
@@ -135,10 +144,7 @@ export async function POST(request: NextRequest) {
       userEmail, // 🛡️ Server provides the real user email
     });
 
-    // Get team name for response
-    const userInfo = await convex.query(api.users.getUserWithTeam, { 
-      userEmail 
-    });
+    // userInfo already loaded above
 
     // 🔗 Send webhook if new appointment was created
     if (result.newAppointment && result.appointmentId && result.patientId) {

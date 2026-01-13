@@ -14,6 +14,8 @@ export default defineSchema({
   teams: defineTable({
     name: v.string(),
     contactPhone: v.optional(v.string()),
+    timezone: v.optional(v.string()), // IANA timezone, e.g. "America/Phoenix"
+    hospitalAddress: v.optional(v.string()), // Included in SMS messages
   }),
 
   patients: defineTable({

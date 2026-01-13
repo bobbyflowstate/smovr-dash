@@ -1,14 +1,15 @@
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { APPOINTMENT_TIMEZONE } from '@/lib/timezone-utils';
 import {
   sendSMSWebhook,
   formatScheduleMessage,
   formatCancelMessage,
 } from '../../convex/webhook_utils';
+import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
 
-const HOSPITAL_ADDRESS = process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
+const FALLBACK_HOSPITAL_ADDRESS =
+  process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
 
 /**
  * Sends a webhook when a new appointment is scheduled
@@ -35,6 +36,13 @@ export async function sendScheduleWebhook(
       patientId,
     });
 
+    const team = await convex.query(api.teams.getById, {
+      teamId: appointment.teamId,
+    });
+
+    const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || FALLBACK_TIMEZONE;
+    const hospitalAddress = team?.hospitalAddress || FALLBACK_HOSPITAL_ADDRESS;
+
     // Parse appointment date/time
     const appointmentDate = new Date(appointment.dateTime);
     
@@ -49,8 +57,8 @@ export async function sendScheduleWebhook(
       appointmentDate,
       appointmentId,
       baseUrl,
-      APPOINTMENT_TIMEZONE,
-      HOSPITAL_ADDRESS
+      timezone,
+      hospitalAddress
     );
     
     // Send SMS webhook
@@ -74,6 +82,15 @@ export async function sendCancelWebhook(
   appointmentDateTime: string
 ): Promise<void> {
   try {
+    const appointment = await convex.query(api.appointments.getById, {
+      appointmentId,
+    });
+    const team = appointment
+      ? await convex.query(api.teams.getById, { teamId: appointment.teamId })
+      : null;
+    const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || FALLBACK_TIMEZONE;
+    const hospitalAddress = team?.hospitalAddress || FALLBACK_HOSPITAL_ADDRESS;
+
     // Parse appointment date/time
     const appointmentDate = new Date(appointmentDateTime);
     
@@ -81,7 +98,7 @@ export async function sendCancelWebhook(
     const patientName = name || null;
     
     // Format message using shared formatter
-    const message = formatCancelMessage(patientName, appointmentDate, APPOINTMENT_TIMEZONE, HOSPITAL_ADDRESS);
+    const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress);
     
     // Send SMS webhook
     await sendSMSWebhook(phone, message);

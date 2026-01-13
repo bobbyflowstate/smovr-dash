@@ -11,9 +11,10 @@ import {
 } from "./reminder_logic";
 import { assertDevEnvironment } from "./env";
 
-// Get timezone and hospital address from environment variables
-const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
-const HOSPITAL_ADDRESS = process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
+const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
+const DEFAULT_HOSPITAL_ADDRESS =
+  process.env.HOSPITAL_ADDRESS ||
+  "123 Medical Center Drive, Suite 456, San Francisco, CA 94102";
 // Use BASE_URL (not NEXT_PUBLIC_BASE_URL) since Convex doesn't have access to Next.js env vars
 // This must be set in Convex dashboard environment variables
 // Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
@@ -65,7 +66,9 @@ async function sendReminder24hWebhook(
   appointmentId: Id<"appointments">,
   patientName: string | null,
   patientPhone: string,
-  appointmentDate: Date
+  appointmentDate: Date,
+  timezone: string,
+  hospitalAddress: string
 ): Promise<SMSWebhookResult> {
   try {
     if (!BASE_URL) {
@@ -85,8 +88,8 @@ async function sendReminder24hWebhook(
       appointmentDate,
       appointmentId,
       BASE_URL,
-      APPOINTMENT_TIMEZONE,
-      HOSPITAL_ADDRESS
+      timezone,
+      hospitalAddress
     );
     
     // Send SMS webhook and return detailed status
@@ -111,7 +114,9 @@ async function sendReminder1hWebhook(
   appointmentId: Id<"appointments">,
   patientName: string | null,
   patientPhone: string,
-  appointmentDate: Date
+  appointmentDate: Date,
+  timezone: string,
+  hospitalAddress: string
 ): Promise<SMSWebhookResult> {
   try {
     if (!BASE_URL) {
@@ -131,8 +136,8 @@ async function sendReminder1hWebhook(
       appointmentDate,
       appointmentId,
       BASE_URL,
-      APPOINTMENT_TIMEZONE,
-      HOSPITAL_ADDRESS
+      timezone,
+      hospitalAddress
     );
     
     // Send SMS webhook and return detailed status
@@ -208,13 +213,12 @@ export const checkAndSendReminders = internalAction({
     
     // We no longer early-return during quiet hours. Instead we still compute eligibility
     // and record a durable attempt per appointment/type with a clear "skipped_quiet_hours" reason.
-    const currentHour = getCurrentHourInTimezone(APPOINTMENT_TIMEZONE);
+    // Quiet hours are enforced in the *team's* timezone (per appointment).
     const quietHoursValid =
       !isNaN(quietStart) && !isNaN(quietEnd) && validateQuietHours(quietStart, quietEnd);
-    const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
 
     console.log(
-      `Reminders cron: timezone=${APPOINTMENT_TIMEZONE} currentHour=${currentHour} quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} inQuiet=${inQuietHours} (envProvided=${Boolean(
+      `Reminders cron: quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} (timezone is per-team; envProvided=${Boolean(
         quietStartStr && quietEndStr
       )} provided=${quietStartStr || "unset"}-${quietEndStr || "unset"})`
     );
@@ -376,10 +380,24 @@ export const checkAndSendReminders = internalAction({
     };
 
     // Process each appointment
+    const teamCache = new Map<string, any>();
     for (const appointment of allAppointments) {
       try {
         const appointmentDate = new Date(appointment.dateTime);
         const hoursUntil = hoursUntilAppointment(appointmentDate, now);
+
+        // Load team settings (timezone/address) for consistent formatting and quiet hours.
+        const teamIdStr = String(appointment.teamId);
+        let team = teamCache.get(teamIdStr);
+        if (!team) {
+          team = await ctx.db.get(appointment.teamId);
+          teamCache.set(teamIdStr, team);
+        }
+        const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
+        const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+
+        const currentHour = getCurrentHourInTimezone(timezone);
+        const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
 
         // Check if appointment needs 24h reminder
         if (isWithinWindow("24h", hoursUntil)) {
@@ -444,7 +462,7 @@ export const checkAndSendReminders = internalAction({
                   teamId: appointment.teamId,
                   status: "failed_precondition",
                   reasonCode: "INVALID_QUIET_HOURS",
-                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
                   dedupMinutes: 60,
                 });
               } else if (inQuietHours) {
@@ -456,7 +474,7 @@ export const checkAndSendReminders = internalAction({
                   teamId: appointment.teamId,
                   status: "skipped_quiet_hours",
                   reasonCode: "QUIET_HOURS",
-                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
                   dedupMinutes: 60,
                 });
               } else if (!BASE_URL) {
@@ -477,7 +495,9 @@ export const checkAndSendReminders = internalAction({
                   appointment._id,
                   patient.name || null,
                   patient.phone,
-                  appointmentDate
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
                 );
 
                 if (result.ok) {
@@ -605,7 +625,7 @@ export const checkAndSendReminders = internalAction({
                   teamId: appointment.teamId,
                   status: "failed_precondition",
                   reasonCode: "INVALID_QUIET_HOURS",
-                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
                   dedupMinutes: 30,
                 });
               } else if (inQuietHours) {
@@ -617,7 +637,7 @@ export const checkAndSendReminders = internalAction({
                   teamId: appointment.teamId,
                   status: "skipped_quiet_hours",
                   reasonCode: "QUIET_HOURS",
-                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
                   dedupMinutes: 30,
                 });
               } else if (!BASE_URL) {
@@ -638,7 +658,9 @@ export const checkAndSendReminders = internalAction({
                   appointment._id,
                   patient.name || null,
                   patient.phone,
-                  appointmentDate
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
                 );
 
                 if (result.ok) {
