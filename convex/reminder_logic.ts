@@ -8,19 +8,13 @@ export type ReminderWindowsHours = Record<
 /**
  * Reminder windows (in hours before appointment).
  *
- * These are intentionally wide to avoid missing reminders due to:
- * - Cron timing (appointment booked just after a tick)
- * - Quiet hours (overnight periods when SMS isn't sent)
- * - Same-day bookings (booked < 24h in advance)
- *
- * The 24h window (12-25h) ensures:
- * - Bookings made up to 12h in advance still get a "day-before" reminder
- * - Survives 10+ hour overnight quiet hours
- * - Still semantically a "24h / day-before" reminder
+ * With minute-level checks, we can keep windows tight and predictable.
  */
 export const REMINDER_WINDOWS_HOURS: ReminderWindowsHours = {
-  "24h": { startInclusive: 12, endExclusive: 25 },
-  "1h": { startInclusive: 0.5, endExclusive: 2 },
+  // "Day-before": 23h50m–24h10m before appointment.
+  "24h": { startInclusive: 1430 / 60, endExclusive: 1450 / 60 },
+  // With minute-level checks, tighten to ~1 hour (55m–65m).
+  "1h": { startInclusive: 55 / 60, endExclusive: 65 / 60 },
 };
 
 export function hoursUntil(appointmentDateTime: Date, now: Date): number {

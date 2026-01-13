@@ -33,6 +33,21 @@ interface SMSWebhookPayload {
   message: string;
 }
 
+export type SMSWebhookFailureReason =
+  | "WEBHOOK_URL_NOT_CONFIGURED"
+  | "HTTP_NON_RETRYABLE"
+  | "HTTP_RETRY_EXHAUSTED"
+  | "TIMEOUT"
+  | "NETWORK_ERROR";
+
+export type SMSWebhookResult = {
+  ok: boolean;
+  attemptCount: number;
+  httpStatus: number | null;
+  failureReason: SMSWebhookFailureReason | null;
+  errorMessage: string | null;
+};
+
 /**
  * Formats appointment date/time for webhook payload
  * 
@@ -85,6 +100,18 @@ export function formatAppointmentDateTime(appointmentDate: Date, timezone: strin
   return { appointmentDateStr, appointmentTimeStr, appointmentDateTimeStr };
 }
 
+function getTimezoneLabelShort(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === "timeZoneName")?.value || timezone;
+  } catch {
+    return timezone;
+  }
+}
+
 /**
  * Unified webhook function that sends SMS message to GoHighLevel
  * Includes automatic retry with exponential backoff for transient failures.
@@ -92,11 +119,26 @@ export function formatAppointmentDateTime(appointmentDate: Date, timezone: strin
  * @returns true if webhook was sent successfully, false otherwise
  */
 export async function sendSMSWebhook(phone: string, message: string): Promise<boolean> {
+  const result = await sendSMSWebhookDetailed(phone, message);
+  return result.ok;
+}
+
+/**
+ * Detailed variant of sendSMSWebhook that returns a structured result.
+ * This is useful for durable logging and debugging when SMS messages aren't sent.
+ */
+export async function sendSMSWebhookDetailed(phone: string, message: string): Promise<SMSWebhookResult> {
   const webhookUrl = process.env.GHL_SMS_WEBHOOK_URL;
   
   if (!webhookUrl) {
     console.log('GHL_SMS_WEBHOOK_URL not configured, skipping SMS webhook');
-    return false;
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "WEBHOOK_URL_NOT_CONFIGURED",
+      errorMessage: null,
+    };
   }
 
   const payload: SMSWebhookPayload = { phone, message };
@@ -138,7 +180,13 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
         } else {
           console.log('SMS webhook sent successfully');
         }
-        return true;
+        return {
+          ok: true,
+          attemptCount: attempt + 1,
+          httpStatus: webhookResponse.status,
+          failureReason: null,
+          errorMessage: null,
+        };
       }
 
       // Check if we should retry this status code
@@ -146,7 +194,13 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
       if (!isRetryableStatus(webhookResponse.status)) {
         // 4xx errors won't succeed on retry - fail immediately
         console.error(`SMS webhook failed with non-retryable status: ${webhookResponse.status}`);
-        return false;
+        return {
+          ok: false,
+          attemptCount: attempt + 1,
+          httpStatus: webhookResponse.status,
+          failureReason: "HTTP_NON_RETRYABLE",
+          errorMessage: null,
+        };
       }
 
       console.warn(`SMS webhook failed with retryable status: ${webhookResponse.status}`);
@@ -167,10 +221,31 @@ export async function sendSMSWebhook(phone: string, message: string): Promise<bo
   // All retries exhausted
   if (lastError) {
     console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last error:`, lastError.message);
+    return {
+      ok: false,
+      attemptCount: MAX_RETRIES + 1,
+      httpStatus: lastStatus,
+      failureReason: lastError.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
+      errorMessage: lastError.message,
+    };
   } else if (lastStatus) {
     console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last status: ${lastStatus}`);
+    return {
+      ok: false,
+      attemptCount: MAX_RETRIES + 1,
+      httpStatus: lastStatus,
+      failureReason: "HTTP_RETRY_EXHAUSTED",
+      errorMessage: null,
+    };
   }
-  return false;
+
+  return {
+    ok: false,
+    attemptCount: MAX_RETRIES + 1,
+    httpStatus: null,
+    failureReason: "NETWORK_ERROR",
+    errorMessage: null,
+  };
 }
 
 /**
@@ -185,6 +260,7 @@ export function formatScheduleMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
@@ -193,7 +269,7 @@ export function formatScheduleMessage(
   const greetingEs = patientName ? `Hola ${patientName}, su cita está confirmada.` : 'Su cita está confirmada.';
   
   return `${greetingEn}\n${greetingEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `Let us know if you are / Infórmenos si usted:\n\n` +
     `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
@@ -211,6 +287,7 @@ export function formatCancelMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   
   const msgEn = patientName 
     ? `Hi ${patientName}, your appointment has been canceled.`
@@ -220,7 +297,7 @@ export function formatCancelMessage(
     : 'Su cita ha sido cancelada.';
   
   return `${msgEn}\n${msgEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `If you need to reschedule, please contact us.\n` +
     `Si necesita reprogramar, por favor contáctenos.`;
@@ -272,6 +349,7 @@ export function formatReminder24hMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
@@ -306,7 +384,7 @@ export function formatReminder24hMessage(
   }
   
   return `${msgEn}\n${msgEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `Let us know if you are / Infórmenos si usted:\n\n` +
     `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
@@ -326,6 +404,7 @@ export function formatReminder1hMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
@@ -338,7 +417,7 @@ export function formatReminder1hMessage(
     : 'Un recordatorio rápido de que su cita es en aproximadamente 1 hora.';
   
   return `${msgEn}\n${msgEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `Let us know if you are / Infórmenos si usted:\n\n` +
     `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +

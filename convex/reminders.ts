@@ -1,8 +1,8 @@
-import { internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { sendSMSWebhook, formatReminder24hMessage, formatReminder1hMessage } from "./webhook_utils";
+import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult } from "./webhook_utils";
 import {
   REMINDER_WINDOWS_HOURS,
   getEligibleReminderRangesISO,
@@ -10,18 +10,32 @@ import {
   isWithinWindow,
 } from "./reminder_logic";
 import { assertDevEnvironment } from "./env";
+import {
+  BOOKING_SUPPRESS_1H_END,
+  BOOKING_SUPPRESS_1H_START,
+  BOOKING_SUPPRESS_24H_END,
+  BOOKING_SUPPRESS_24H_START,
+  DEFAULT_QUIET_HOURS_END,
+  DEFAULT_QUIET_HOURS_START,
+  isInQuietHours,
+  mapWebhookFailureToReason,
+  noteForAttempt,
+  type ReminderAttemptReasonCode,
+  type ReminderAttemptStatus,
+} from "./reminder_policies";
 
-// Get timezone and hospital address from environment variables
-const APPOINTMENT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
-const HOSPITAL_ADDRESS = process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
+const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
+const DEFAULT_HOSPITAL_ADDRESS =
+  process.env.HOSPITAL_ADDRESS ||
+  "123 Medical Center Drive, Suite 456, San Francisco, CA 94102";
 // Use BASE_URL (not NEXT_PUBLIC_BASE_URL) since Convex doesn't have access to Next.js env vars
 // This must be set in Convex dashboard environment variables
 // Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
 const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
 
-// Reminder type constants for type safety
 export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
+// Reminder attempt types, constants, and pure policy helpers live in reminder_policies.ts so we can unit test them.
 
 /**
  * Sends a 24h reminder webhook
@@ -31,29 +45,43 @@ async function sendReminder24hWebhook(
   appointmentId: Id<"appointments">,
   patientName: string | null,
   patientPhone: string,
-  appointmentDate: Date
-): Promise<boolean> {
-  if (!BASE_URL) {
-    console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
-    return false;
-  }
-
+  appointmentDate: Date,
+  timezone: string,
+  hospitalAddress: string
+): Promise<SMSWebhookResult> {
   try {
+    if (!BASE_URL) {
+      console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "NETWORK_ERROR",
+        errorMessage: "BASE_URL_NOT_CONFIGURED",
+      };
+    }
+
     // Format message
     const message = formatReminder24hMessage(
       patientName,
       appointmentDate,
       appointmentId,
       BASE_URL,
-      APPOINTMENT_TIMEZONE,
-      HOSPITAL_ADDRESS
+      timezone,
+      hospitalAddress
     );
     
-    // Send SMS webhook and return success status
-    return await sendSMSWebhook(patientPhone, message);
+    // Send SMS webhook and return detailed status
+    return await sendSMSWebhookDetailed(patientPhone, message);
   } catch (error) {
     console.error('Error preparing 24h reminder webhook:', error);
-    return false;
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -65,29 +93,43 @@ async function sendReminder1hWebhook(
   appointmentId: Id<"appointments">,
   patientName: string | null,
   patientPhone: string,
-  appointmentDate: Date
-): Promise<boolean> {
-  if (!BASE_URL) {
-    console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
-    return false;
-  }
-
+  appointmentDate: Date,
+  timezone: string,
+  hospitalAddress: string
+): Promise<SMSWebhookResult> {
   try {
+    if (!BASE_URL) {
+      console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "NETWORK_ERROR",
+        errorMessage: "BASE_URL_NOT_CONFIGURED",
+      };
+    }
+
     // Format message
     const message = formatReminder1hMessage(
       patientName,
       appointmentDate,
       appointmentId,
       BASE_URL,
-      APPOINTMENT_TIMEZONE,
-      HOSPITAL_ADDRESS
+      timezone,
+      hospitalAddress
     );
     
-    // Send SMS webhook and return success status
-    return await sendSMSWebhook(patientPhone, message);
+    // Send SMS webhook and return detailed status
+    return await sendSMSWebhookDetailed(patientPhone, message);
   } catch (error) {
     console.error('Error preparing 1h reminder webhook:', error);
-    return false;
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -102,19 +144,6 @@ function validateQuietHours(quietStart: number, quietEnd: number): boolean {
     return false;
   }
   return true;
-}
-
-/**
- * Checks if current time is within quiet hours
- */
-function isInQuietHours(currentHour: number, quietStart: number, quietEnd: number): boolean {
-  if (quietStart <= quietEnd) {
-    // Quiet hours don't span midnight (e.g., 8-22)
-    return currentHour >= quietStart && currentHour < quietEnd;
-  } else {
-    // Quiet hours span midnight (e.g., 22-8)
-    return currentHour >= quietStart || currentHour < quietEnd;
-  }
 }
 
 /**
@@ -141,27 +170,23 @@ export const checkAndSendReminders = internalAction({
     console.log('Reminders cron: Starting check');
 
     // Check quiet hours first
-    const quietStartStr = process.env.SMS_QUIET_HOURS_START;
-    const quietEndStr = process.env.SMS_QUIET_HOURS_END;
+    // NOTE: Quiet hours are enforced as 10pm–5am in clinic timezone.
+    // We intentionally ignore SMS_QUIET_HOURS_START/END env vars here to avoid configuration drift.
+    const quietStart = DEFAULT_QUIET_HOURS_START;
+    const quietEnd = DEFAULT_QUIET_HOURS_END;
     
-    if (quietStartStr && quietEndStr) {
-      const quietStart = parseInt(quietStartStr);
-      const quietEnd = parseInt(quietEndStr);
-      
-      if (!isNaN(quietStart) && !isNaN(quietEnd)) {
-        if (!validateQuietHours(quietStart, quietEnd)) {
-          // Invalid quiet hours config - don't send reminders
-          console.log('Reminders cron: Invalid quiet hours configuration, skipping reminder check');
-          return;
-        } else {
-          const currentHour = getCurrentHourInTimezone(APPOINTMENT_TIMEZONE);
-          
-          if (isInQuietHours(currentHour, quietStart, quietEnd)) {
-            console.log(`Reminders cron: Skipping - current hour ${currentHour} is in quiet hours (${quietStart}-${quietEnd})`);
-            return;
-          }
-        }
-      }
+    // We no longer early-return during quiet hours. Instead we still compute eligibility
+    // and record a durable attempt per appointment/type with a clear "skipped_quiet_hours" reason.
+    // Quiet hours are enforced in the *team's* timezone (per appointment).
+    const quietHoursValid =
+      !isNaN(quietStart) && !isNaN(quietEnd) && validateQuietHours(quietStart, quietEnd);
+
+    console.log(
+      `Reminders cron: quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} (timezone is per-team)`
+    );
+
+    if (!quietHoursValid) {
+      console.log('Reminders cron: Invalid quiet hours configuration; reminders will be marked failed_precondition');
     }
 
     // Get current time
@@ -185,48 +210,279 @@ export const checkAndSendReminders = internalAction({
       `Reminders cron: Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
     );
 
+    const noteFor = noteForAttempt;
+
+    const reminderSourceDisplay = (source: unknown): { sourceRaw: string | null; sourceDisplay: string | null } => {
+      const raw = typeof source === "string" ? source : null;
+      if (!raw) return { sourceRaw: null, sourceDisplay: null };
+      if (raw === "booking_confirmation") return { sourceRaw: raw, sourceDisplay: "Booking confirmation" };
+      if (raw === "cron" || raw === "automated_check")
+        return { sourceRaw: raw, sourceDisplay: "Automated reminder check" };
+      return { sourceRaw: raw, sourceDisplay: raw };
+    };
+
+    const formatHoursHuman = (hours: number): string => {
+      if (!isFinite(hours)) return `${hours}`;
+      const totalMinutes = Math.round(hours * 60);
+      const h = Math.floor(totalMinutes / 60);
+      const m = Math.abs(totalMinutes % 60);
+      if (h === 0) return `${m}m`;
+      if (m === 0) return `${h}h`;
+      return `${h}h ${m}m`;
+    };
+
+    const shouldDedup = async (args: {
+      appointmentId: Id<"appointments">;
+      reminderType: "24h" | "1h";
+      status: ReminderAttemptStatus;
+      reasonCode: ReminderAttemptReasonCode;
+      nowISO: string;
+      dedupMinutes: number;
+    }): Promise<boolean> => {
+      const latest = await ctx.runQuery(internal.reminders.getLatestReminderAttempt, {
+        appointmentId: args.appointmentId,
+        reminderType: args.reminderType,
+      });
+      if (!latest) return false;
+      if (latest.status !== args.status || latest.reasonCode !== args.reasonCode) return false;
+      const last = new Date(latest.attemptedAt).getTime();
+      const nowMs = new Date(args.nowISO).getTime();
+      if (!isFinite(last) || !isFinite(nowMs)) return false;
+      const minutes = (nowMs - last) / (1000 * 60);
+      return minutes >= 0 && minutes < args.dedupMinutes;
+    };
+
+    const recordAttempt = async (args: {
+      appointmentId: Id<"appointments">;
+      patientId: Id<"patients">;
+      reminderType: "24h" | "1h";
+      targetDate: string;
+      teamId: Id<"teams">;
+      status: ReminderAttemptStatus;
+      reasonCode: ReminderAttemptReasonCode;
+      details: Record<string, unknown>;
+      dedupMinutes?: number;
+      noteOverride?: string;
+    }) => {
+      const dedupMinutes = args.dedupMinutes ?? 30;
+      const skip = await shouldDedup({
+        appointmentId: args.appointmentId,
+        reminderType: args.reminderType,
+        status: args.status,
+        reasonCode: args.reasonCode,
+        nowISO,
+        dedupMinutes,
+      });
+      if (skip) return;
+      await ctx.runMutation(internal.reminders.recordReminderAttempt, {
+        appointmentId: args.appointmentId,
+        patientId: args.patientId,
+        reminderType: args.reminderType,
+        targetDate: args.targetDate,
+        attemptedAt: nowISO,
+        status: args.status,
+        reasonCode: args.reasonCode,
+        note: args.noteOverride ?? noteFor(args.status, args.reasonCode),
+        detailsJson: JSON.stringify(args.details),
+        teamId: args.teamId,
+      });
+    };
+
     // Process each appointment
+    const teamCache = new Map<string, any>();
     for (const appointment of allAppointments) {
       try {
         const appointmentDate = new Date(appointment.dateTime);
         const hoursUntil = hoursUntilAppointment(appointmentDate, now);
 
+        // Load team settings (timezone/address) for consistent formatting and quiet hours.
+        const teamIdStr = String(appointment.teamId);
+        let team = teamCache.get(teamIdStr);
+        if (!team) {
+          team = await ctx.runQuery(internal.reminders.getTeamById, {
+            teamId: appointment.teamId,
+          });
+          teamCache.set(teamIdStr, team);
+        }
+        const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
+        const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+
+        const currentHour = getCurrentHourInTimezone(timezone);
+        const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
+
         // Check if appointment needs 24h reminder
         if (isWithinWindow("24h", hoursUntil)) {
           // Check if 24h reminder already sent (includes bookings within the 24h window)
           const existingReminder = await ctx.runQuery(
-            internal.reminders.checkReminderSent,
+            internal.reminders.getReminderSentRecord,
             {
               appointmentId: appointment._id,
               reminderType: "24h",
             }
           );
 
-          if (!existingReminder) {
+          if (existingReminder) {
+            const source = (existingReminder as any).source ?? null;
+            const sentAt = (existingReminder as any).sentAt as string | undefined;
+            const sentAtHoursBefore =
+              sentAt && appointment.dateTime
+                ? hoursUntilAppointment(new Date(appointment.dateTime), new Date(sentAt))
+                : null;
+            const sourceInfo = reminderSourceDisplay(source);
+            const isBookingConfirmation = sourceInfo.sourceRaw === "booking_confirmation";
+            const isAutomatedCheck = sourceInfo.sourceRaw === "automated_check" || sourceInfo.sourceRaw === "cron";
+
+            // Avoid noisy "already sent" rows after a successful send.
+            // With minute-level checks, we'll see the appointment again until the window closes.
+            // If we've already recorded a "succeeded" attempt for this reminderType, don't add a redundant skip.
+            if (isAutomatedCheck) {
+              const latestAttempt = await ctx.runQuery(internal.reminders.getLatestReminderAttempt, {
+                appointmentId: appointment._id,
+                reminderType: "24h",
+              });
+              if (latestAttempt?.status === "succeeded") {
+                continue;
+              }
+            }
+
+            await recordAttempt({
+              appointmentId: appointment._id,
+              patientId: appointment.patientId,
+              reminderType: "24h",
+              targetDate: appointment.dateTime,
+              teamId: appointment.teamId,
+              status: isBookingConfirmation ? "skipped_booking_confirmation" : "skipped_already_sent",
+              reasonCode: isBookingConfirmation ? "BOOKING_CONFIRMATION" : "ALREADY_SENT",
+              noteOverride: isBookingConfirmation
+                ? `Skipped 24h reminder because booking confirmation SMS was sent ${sentAtHoursBefore !== null ? `~${formatHoursHuman(sentAtHoursBefore)} ` : ""}before the appointment (avoid duplicate).`
+                : `Skipped 24h reminder because it was already sent earlier${sentAt ? ` at ${sentAt}` : ""}.`,
+              details: {
+                nowISO,
+                appointmentDateTime: appointment.dateTime,
+                hoursUntil,
+                existingReminder: {
+                  _id: existingReminder._id,
+                  sentAt,
+                  source: sourceInfo.sourceDisplay,
+                  sourceRaw: sourceInfo.sourceRaw,
+                  targetDate: (existingReminder as any).targetDate,
+                  sentAtHoursBeforeAppointment: sentAtHoursBefore,
+                },
+              },
+              dedupMinutes: 240,
+            });
+          } else {
             // Get patient details
             const patient = await ctx.runQuery(internal.reminders.getPatientById, {
               patientId: appointment.patientId,
             });
 
             if (patient) {
-              console.log(`Sending 24h reminder for appointment ${appointment._id}`);
-              const success = await sendReminder24hWebhook(
-                appointment._id,
-                patient.name || null,
-                patient.phone,
-                appointmentDate
-              );
-
-              // Only record reminder if it was sent successfully
-              if (success) {
-                await ctx.runMutation(internal.reminders.recordReminderSent, {
+              if (!quietHoursValid) {
+                await recordAttempt({
                   appointmentId: appointment._id,
                   patientId: appointment.patientId,
                   reminderType: "24h",
                   targetDate: appointment.dateTime,
                   teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "INVALID_QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
+                  dedupMinutes: 60,
                 });
+              } else if (inQuietHours) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "24h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "skipped_quiet_hours",
+                  reasonCode: "QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
+                  dedupMinutes: 60,
+                });
+              } else if (!BASE_URL) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "24h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "BASE_URL_NOT_CONFIGURED",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                  dedupMinutes: 240,
+                });
+              } else {
+                console.log(`Sending 24h reminder for appointment ${appointment._id}`);
+                const result = await sendReminder24hWebhook(
+                  appointment._id,
+                  patient.name || null,
+                  patient.phone,
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
+                );
+
+                if (result.ok) {
+                  await ctx.runMutation(internal.reminders.recordReminderSent, {
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "24h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                  });
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "24h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status: "succeeded",
+                    reasonCode: "SENT",
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 5,
+                  });
+                } else {
+                  const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
+                  const status: ReminderAttemptStatus =
+                    reason === "BASE_URL_NOT_CONFIGURED" ? "failed_precondition" : "failed_webhook";
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "24h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status,
+                    reasonCode: reason,
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 30,
+                  });
+                }
               }
+            } else {
+              await recordAttempt({
+                appointmentId: appointment._id,
+                patientId: appointment.patientId,
+                reminderType: "24h",
+                targetDate: appointment.dateTime,
+                teamId: appointment.teamId,
+                status: "failed_precondition",
+                reasonCode: "PATIENT_NOT_FOUND",
+                details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                dedupMinutes: 240,
+              });
             }
           }
         }
@@ -235,43 +491,199 @@ export const checkAndSendReminders = internalAction({
         if (isWithinWindow("1h", hoursUntil)) {
           // Check if 1h reminder already sent
           const existingReminder = await ctx.runQuery(
-            internal.reminders.checkReminderSent,
+            internal.reminders.getReminderSentRecord,
             {
               appointmentId: appointment._id,
               reminderType: "1h",
             }
           );
 
-          if (!existingReminder) {
+          if (existingReminder) {
+            const source = (existingReminder as any).source ?? null;
+            const sentAt = (existingReminder as any).sentAt as string | undefined;
+            const sentAtHoursBefore =
+              sentAt && appointment.dateTime
+                ? hoursUntilAppointment(new Date(appointment.dateTime), new Date(sentAt))
+                : null;
+            const sourceInfo = reminderSourceDisplay(source);
+            const isBookingConfirmation = sourceInfo.sourceRaw === "booking_confirmation";
+            const isAutomatedCheck = sourceInfo.sourceRaw === "automated_check" || sourceInfo.sourceRaw === "cron";
+
+            // Avoid noisy "already sent" rows after a successful send.
+            if (isAutomatedCheck) {
+              const latestAttempt = await ctx.runQuery(internal.reminders.getLatestReminderAttempt, {
+                appointmentId: appointment._id,
+                reminderType: "1h",
+              });
+              if (latestAttempt?.status === "succeeded") {
+                continue;
+              }
+            }
+
+            await recordAttempt({
+              appointmentId: appointment._id,
+              patientId: appointment.patientId,
+              reminderType: "1h",
+              targetDate: appointment.dateTime,
+              teamId: appointment.teamId,
+              status: isBookingConfirmation ? "skipped_booking_confirmation" : "skipped_already_sent",
+              reasonCode: isBookingConfirmation ? "BOOKING_CONFIRMATION" : "ALREADY_SENT",
+              noteOverride: isBookingConfirmation
+                ? `Skipped 1h reminder because booking confirmation SMS was sent ${sentAtHoursBefore !== null ? `~${formatHoursHuman(sentAtHoursBefore)} ` : ""}before the appointment (avoid duplicate).`
+                : `Skipped 1h reminder because it was already sent earlier${sentAt ? ` at ${sentAt}` : ""}.`,
+              details: {
+                nowISO,
+                appointmentDateTime: appointment.dateTime,
+                hoursUntil,
+                existingReminder: {
+                  _id: existingReminder._id,
+                  sentAt,
+                  source: sourceInfo.sourceDisplay,
+                  sourceRaw: sourceInfo.sourceRaw,
+                  targetDate: (existingReminder as any).targetDate,
+                  sentAtHoursBeforeAppointment: sentAtHoursBefore,
+                },
+              },
+              dedupMinutes: 120,
+            });
+          } else {
             // Get patient details
             const patient = await ctx.runQuery(internal.reminders.getPatientById, {
               patientId: appointment.patientId,
             });
 
             if (patient) {
-              console.log(`Sending 1h reminder for appointment ${appointment._id}`);
-              const success = await sendReminder1hWebhook(
-                appointment._id,
-                patient.name || null,
-                patient.phone,
-                appointmentDate
-              );
-
-              // Only record reminder if it was sent successfully
-              if (success) {
-                await ctx.runMutation(internal.reminders.recordReminderSent, {
+              if (!quietHoursValid) {
+                await recordAttempt({
                   appointmentId: appointment._id,
                   patientId: appointment.patientId,
                   reminderType: "1h",
                   targetDate: appointment.dateTime,
                   teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "INVALID_QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
+                  dedupMinutes: 30,
                 });
+              } else if (inQuietHours) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "1h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "skipped_quiet_hours",
+                  reasonCode: "QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour, timezone },
+                  dedupMinutes: 30,
+                });
+              } else if (!BASE_URL) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "1h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "BASE_URL_NOT_CONFIGURED",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                  dedupMinutes: 120,
+                });
+              } else {
+                console.log(`Sending 1h reminder for appointment ${appointment._id}`);
+                const result = await sendReminder1hWebhook(
+                  appointment._id,
+                  patient.name || null,
+                  patient.phone,
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
+                );
+
+                if (result.ok) {
+                  await ctx.runMutation(internal.reminders.recordReminderSent, {
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "1h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                  });
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "1h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status: "succeeded",
+                    reasonCode: "SENT",
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 5,
+                  });
+                } else {
+                  const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
+                  const status: ReminderAttemptStatus =
+                    reason === "BASE_URL_NOT_CONFIGURED" ? "failed_precondition" : "failed_webhook";
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "1h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status,
+                    reasonCode: reason,
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 15,
+                  });
+                }
               }
+            } else {
+              await recordAttempt({
+                appointmentId: appointment._id,
+                patientId: appointment.patientId,
+                reminderType: "1h",
+                targetDate: appointment.dateTime,
+                teamId: appointment.teamId,
+                status: "failed_precondition",
+                reasonCode: "PATIENT_NOT_FOUND",
+                details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                dedupMinutes: 120,
+              });
             }
           }
         }
       } catch (error) {
         console.error(`Error processing appointment ${appointment._id}:`, error);
+        // Record a durable processing failure so we can explain "why not sent"
+        try {
+          await ctx.runMutation(internal.reminders.recordReminderAttempt, {
+            appointmentId: appointment._id,
+            patientId: appointment.patientId,
+            reminderType: "24h", // best-effort; actual type depends on window
+            targetDate: appointment.dateTime,
+            attemptedAt: nowISO,
+            status: "failed_processing",
+            reasonCode: "UNKNOWN_ERROR",
+            note: "Reminder not sent due to an internal processing error.",
+            detailsJson: JSON.stringify({
+              nowISO,
+              appointmentDateTime: appointment.dateTime,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            teamId: appointment.teamId,
+          });
+        } catch {
+          // If logging fails, still continue with next appointment
+        }
         // Continue with next appointment - don't fail entire batch
       }
     }
@@ -299,35 +711,13 @@ export const testCheckReminders = internalAction({
       console.log('TEST: Manually triggering reminder check');
       console.log('═══════════════════════════════════════════════════════');
       
-      // Check quiet hours first
+      // Quiet hours are enforced as 10pm–5am in the team's timezone (per appointment).
+      // We do not skip the whole run; we evaluate quiet hours per appointment like production.
       const quietStartStr = process.env.SMS_QUIET_HOURS_START;
       const quietEndStr = process.env.SMS_QUIET_HOURS_END;
-      
-      console.log(`TEST: Quiet hours config - START: ${quietStartStr || 'not set'}, END: ${quietEndStr || 'not set'}`);
-      
-      if (quietStartStr && quietEndStr) {
-        const quietStart = parseInt(quietStartStr);
-        const quietEnd = parseInt(quietEndStr);
-        
-        if (!isNaN(quietStart) && !isNaN(quietEnd)) {
-          if (!validateQuietHours(quietStart, quietEnd)) {
-            // Invalid quiet hours config - don't send reminders
-            console.log('TEST: ⚠️ Invalid quiet hours configuration, skipping reminder check');
-            return { 
-              message: 'Skipped due to invalid quiet hours configuration', 
-              error: `Invalid quiet hours: start=${quietStart}, end=${quietEnd}. Must be between 0-23` 
-            };
-          } else {
-            const currentHour = getCurrentHourInTimezone(APPOINTMENT_TIMEZONE);
-            console.log(`TEST: Current hour in ${APPOINTMENT_TIMEZONE}: ${currentHour}`);
-            
-            if (isInQuietHours(currentHour, quietStart, quietEnd)) {
-              console.log(`TEST: ⚠️ Skipping - current hour ${currentHour} is in quiet hours (${quietStart}-${quietEnd})`);
-              return { message: 'Skipped due to quiet hours', currentHour, quietHours: `${quietStart}-${quietEnd}` };
-            }
-          }
-        }
-      }
+      console.log(
+        `TEST: Quiet hours env provided: ${quietStartStr || "unset"}-${quietEndStr || "unset"} (enforced=22-5, per-team timezone)`
+      );
 
       // Get current time
       const now = new Date();
@@ -360,12 +750,30 @@ export const testCheckReminders = internalAction({
       let remindersSent = { "24h": 0, "1h": 0 };
 
       // Process each appointment
+      const teamCache = new Map<string, any>();
       for (const appointment of allAppointments) {
         try {
           const appointmentDate = new Date(appointment.dateTime);
           const hoursUntil = hoursUntilAppointment(appointmentDate, now);
+          const teamIdStr = String(appointment.teamId);
+          let team = teamCache.get(teamIdStr);
+          if (!team) {
+            team = await ctx.runQuery(internal.reminders.getTeamById, {
+              teamId: appointment.teamId,
+            });
+            teamCache.set(teamIdStr, team);
+          }
+          const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
+          const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+
+          const currentHour = getCurrentHourInTimezone(timezone);
+          const inQuietHours = isInQuietHours(currentHour, DEFAULT_QUIET_HOURS_START, DEFAULT_QUIET_HOURS_END);
           
-          console.log(`TEST: Processing appointment ${appointment._id} - ${hoursUntil.toFixed(2)} hours until appointment`);
+          console.log(
+            `TEST: Processing appointment ${appointment._id} - ${hoursUntil.toFixed(
+              2
+            )}h until appointment (timezone=${timezone} currentHour=${currentHour} inQuiet=${inQuietHours})`
+          );
 
           // Check if appointment needs 24h reminder
           if (isWithinWindow("24h", hoursUntil)) {
@@ -373,7 +781,7 @@ export const testCheckReminders = internalAction({
             
             // Check if 24h reminder already sent (includes bookings within the 24h window)
             const existingReminder = await ctx.runQuery(
-              internal.reminders.checkReminderSent,
+              internal.reminders.getReminderSentRecord,
               {
                 appointmentId: appointment._id,
                 reminderType: "24h",
@@ -381,6 +789,11 @@ export const testCheckReminders = internalAction({
             );
 
             if (!existingReminder) {
+              if (inQuietHours) {
+                console.log(
+                  `TEST: ⏭️ Skipping send due to quiet hours (22-5) in team timezone (${timezone})`
+                );
+              } else {
               // Get patient details
               const patient = await ctx.runQuery(internal.reminders.getPatientById, {
                 patientId: appointment.patientId,
@@ -388,15 +801,17 @@ export const testCheckReminders = internalAction({
 
               if (patient) {
                 console.log(`TEST: 📤 Sending 24h reminder for appointment ${appointment._id} to ${patient.phone}`);
-                const success = await sendReminder24hWebhook(
+                const result = await sendReminder24hWebhook(
                   appointment._id,
                   patient.name || null,
                   patient.phone,
-                  appointmentDate
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
                 );
 
                 // Only record reminder if it was sent successfully
-                if (success) {
+                if (result.ok) {
                   await ctx.runMutation(internal.reminders.recordReminderSent, {
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -412,6 +827,7 @@ export const testCheckReminders = internalAction({
                 }
               } else {
                 console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
+              }
               }
             } else {
               console.log(`TEST: ⏭️ 24h reminder already sent for appointment ${appointment._id}`);
@@ -434,7 +850,7 @@ export const testCheckReminders = internalAction({
             console.log(`TEST: ⏰ Appointment ${appointment._id} is in 1h reminder window`);
             // Check if 1h reminder already sent
             const existingReminder = await ctx.runQuery(
-              internal.reminders.checkReminderSent,
+              internal.reminders.getReminderSentRecord,
               {
                 appointmentId: appointment._id,
                 reminderType: "1h",
@@ -442,6 +858,11 @@ export const testCheckReminders = internalAction({
             );
 
             if (!existingReminder) {
+              if (inQuietHours) {
+                console.log(
+                  `TEST: ⏭️ Skipping send due to quiet hours (22-5) in team timezone (${timezone})`
+                );
+              } else {
               // Get patient details
               const patient = await ctx.runQuery(internal.reminders.getPatientById, {
                 patientId: appointment.patientId,
@@ -449,15 +870,17 @@ export const testCheckReminders = internalAction({
 
               if (patient) {
                 console.log(`TEST: 📤 Sending 1h reminder for appointment ${appointment._id} to ${patient.phone}`);
-                const success = await sendReminder1hWebhook(
+                const result = await sendReminder1hWebhook(
                   appointment._id,
                   patient.name || null,
                   patient.phone,
-                  appointmentDate
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
                 );
 
                 // Only record reminder if it was sent successfully
-                if (success) {
+                if (result.ok) {
                   await ctx.runMutation(internal.reminders.recordReminderSent, {
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -473,6 +896,7 @@ export const testCheckReminders = internalAction({
                 }
               } else {
                 console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
+              }
               }
             } else {
               console.log(`TEST: ⏭️ 1h reminder already sent for appointment ${appointment._id}`);
@@ -534,6 +958,7 @@ export const getAllFutureAppointments = internalQuery({
     const allAppointments = await ctx.db
       .query("appointments")
       .withIndex("by_dateTime", (q) => q.gte("dateTime", args.nowISO))
+      .filter((q) => q.neq(q.field("status"), "cancelled"))
       .collect();
     
     return allAppointments;
@@ -557,8 +982,84 @@ export const getAppointmentsInRange = internalQuery({
       .withIndex("by_dateTime", (q) =>
         q.gte("dateTime", args.startISO).lt("dateTime", args.endISO)
       )
+      // Cancelled appointments should not receive reminders.
+      .filter((q) => q.neq(q.field("status"), "cancelled"))
       .collect();
     return appts;
+  },
+});
+
+/**
+ * PUBLIC Mutation: Record an SMS send attempt tied to an appointment.
+ *
+ * Used by the Next.js API to log booking confirmation + cancellation SMS sends
+ * so the admin UI can show a complete message history for an appointment.
+ */
+export const recordAppointmentSmsAttempt = mutation({
+  args: {
+    userEmail: v.string(),
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    messageType: v.string(), // "booking_confirmation" | "cancellation" | etc.
+    targetDate: v.string(), // appointment dateTime ISO
+    webhookResult: v.object({
+      ok: v.boolean(),
+      attemptCount: v.number(),
+      httpStatus: v.union(v.number(), v.null()),
+      failureReason: v.union(v.string(), v.null()),
+      errorMessage: v.union(v.string(), v.null()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    // Enforce multi-tenancy via userEmail -> teamId.
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    if (!user) throw new Error("User not found in database.");
+
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment || appointment.teamId !== user.teamId) {
+      throw new Error("Appointment not found.");
+    }
+
+    // Optional safety: ensure the patient matches the appointment.
+    if (appointment.patientId !== args.patientId) {
+      throw new Error("Patient does not match appointment.");
+    }
+
+    const nowISO = new Date().toISOString();
+    const status: ReminderAttemptStatus = args.webhookResult.ok ? "succeeded" : "failed_webhook";
+    const reasonCode: ReminderAttemptReasonCode = args.webhookResult.ok
+      ? "SENT"
+      : mapWebhookFailureToReason(args.webhookResult as unknown as SMSWebhookResult);
+
+    const messageLabel =
+      args.messageType === "booking_confirmation"
+        ? "Booking confirmation SMS"
+        : args.messageType === "cancellation"
+          ? "Cancellation SMS"
+          : "SMS message";
+
+    const note = args.webhookResult.ok
+      ? `${messageLabel} sent successfully. It may take 1–3 minutes to arrive on the patient's phone.`
+      : `${messageLabel} not sent due to SMS webhook failure.`;
+
+    await ctx.db.insert("reminderAttempts", {
+      appointmentId: args.appointmentId,
+      patientId: args.patientId,
+      reminderType: args.messageType,
+      targetDate: args.targetDate,
+      attemptedAt: nowISO,
+      status,
+      reasonCode,
+      note,
+      detailsJson: JSON.stringify({
+        webhookResult: args.webhookResult,
+        appointmentDateTime: args.targetDate,
+      }),
+      teamId: appointment.teamId,
+    });
   },
 });
 
@@ -583,6 +1084,25 @@ export const checkReminderSent = internalQuery({
 });
 
 /**
+ * Query: Get the reminder record (if any) for appointment + type.
+ * Use this when you need to explain *why* a reminder was considered already sent.
+ */
+export const getReminderSentRecord = internalQuery({
+  args: {
+    appointmentId: v.id("appointments"),
+    reminderType: v.union(v.literal("24h"), v.literal("1h")),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("reminders")
+      .withIndex("by_appointment_type", (q) =>
+        q.eq("appointmentId", args.appointmentId).eq("reminderType", args.reminderType)
+      )
+      .first();
+  },
+});
+
+/**
  * Query: Get patient by ID
  */
 export const getPatientById = internalQuery({
@@ -591,6 +1111,129 @@ export const getPatientById = internalQuery({
   },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.patientId);
+  },
+});
+
+/**
+ * Query: Get team by ID (used by reminder actions for timezone/address).
+ */
+export const getTeamById = internalQuery({
+  args: {
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.teamId);
+  },
+});
+
+/**
+ * Query: Get the latest reminder attempt for an appointment + reminderType.
+ * Used for deduping noisy statuses (quiet hours, webhook failures).
+ */
+export const getLatestReminderAttempt = internalQuery({
+  args: {
+    appointmentId: v.id("appointments"),
+    reminderType: v.union(v.literal("24h"), v.literal("1h")),
+  },
+  handler: async (ctx, args) => {
+    const attempts = await ctx.db
+      .query("reminderAttempts")
+      .withIndex("by_appointment_type", (q) =>
+        q.eq("appointmentId", args.appointmentId).eq("reminderType", args.reminderType)
+      )
+      .order("desc")
+      .take(1);
+    return attempts[0] ?? null;
+  },
+});
+
+/**
+ * Mutation: Record reminder attempt outcome (durable audit trail).
+ */
+export const recordReminderAttempt = internalMutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    reminderType: v.union(v.literal("24h"), v.literal("1h")),
+    targetDate: v.string(),
+    attemptedAt: v.string(),
+    status: v.string(),
+    reasonCode: v.string(),
+    note: v.string(),
+    detailsJson: v.optional(v.string()),
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("reminderAttempts", {
+      appointmentId: args.appointmentId,
+      patientId: args.patientId,
+      reminderType: args.reminderType,
+      targetDate: args.targetDate,
+      attemptedAt: args.attemptedAt,
+      status: args.status,
+      reasonCode: args.reasonCode,
+      note: args.note,
+      detailsJson: args.detailsJson,
+      teamId: args.teamId,
+    });
+  },
+});
+
+/**
+ * Query: Get reminder attempts for a given appointment (team-scoped).
+ * Intended for in-app debugging / CEO reporting.
+ */
+export const getReminderAttemptsByAppointment = internalQuery({
+  args: {
+    teamId: v.id("teams"),
+    appointmentId: v.id("appointments"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+    const attempts = await ctx.db
+      .query("reminderAttempts")
+      .withIndex("by_team_appointment", (q) =>
+        q.eq("teamId", args.teamId).eq("appointmentId", args.appointmentId)
+      )
+      .order("desc")
+      .take(limit);
+    return attempts;
+  },
+});
+
+/**
+ * Public query: Get reminder attempts for a specific appointment (team-scoped via userEmail).
+ * This is intended to power the authenticated dashboard so you can explain "why it didn't send."
+ */
+export const getReminderAttemptsForAppointment = query({
+  args: {
+    userEmail: v.string(),
+    appointmentId: v.id("appointments"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    if (!user) throw new Error("User not found in database");
+
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment || appointment.teamId !== user.teamId) {
+      // Hide existence across teams
+      throw new Error("Appointment not found");
+    }
+
+    const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+    const attempts = await ctx.db
+      .query("reminderAttempts")
+      .withIndex("by_team_appointment", (q) =>
+        q.eq("teamId", user.teamId).eq("appointmentId", args.appointmentId)
+      )
+      .order("desc")
+      .take(limit);
+    return attempts;
   },
 });
 
@@ -612,6 +1255,7 @@ export const recordReminderSent = internalMutation({
       reminderType: args.reminderType,
       targetDate: args.targetDate,
       sentAt: new Date().toISOString(),
+      source: "automated_check",
       teamId: args.teamId,
     });
   },
@@ -625,7 +1269,7 @@ export const recordReminderSent = internalMutation({
  * - The cron would also try to send a 24h reminder (redundant)
  * 
  * By recording the 24h reminder as "sent" at booking time, the cron's
- * `checkReminderSent` query returns true and skips the reminder.
+ * `getReminderSentRecord` returns a record and skips the reminder.
  * 
  * Called from the appointments API after creating an appointment.
  */
@@ -641,24 +1285,87 @@ export const markReminderSentIfInWindow = mutation({
     const appointmentDate = new Date(args.appointmentDateTime);
     const hoursUntil = hoursUntilAppointment(appointmentDate, now);
 
-    // Check if appointment is within the 24h reminder window
-    if (isWithinWindow("24h", hoursUntil, REMINDER_WINDOWS_HOURS)) {
-      // Record as if we already sent the 24h reminder (since they got the confirmation)
+    const marked: { marked24h: boolean; marked1h: boolean } = {
+      marked24h: false,
+      marked1h: false,
+    };
+
+    const maybeInsertSuppression = async (reminderType: "24h" | "1h") => {
+      const existing = await ctx.db
+        .query("reminders")
+        .withIndex("by_appointment_type", (q) =>
+          q.eq("appointmentId", args.appointmentId).eq("reminderType", reminderType)
+        )
+        .first();
+      if (existing) return false;
+
       await ctx.db.insert("reminders", {
         appointmentId: args.appointmentId,
         patientId: args.patientId,
-        reminderType: "24h",
+        reminderType,
         targetDate: args.appointmentDateTime,
         sentAt: now.toISOString(),
+        source: "booking_confirmation",
         teamId: args.teamId,
       });
-      console.log(
-        `Marked 24h reminder as sent for appointment ${args.appointmentId} (booked ${hoursUntil.toFixed(1)}h in advance)`
-      );
-      return { marked24h: true };
+
+      // Also record an audit trail entry immediately so admins don't have to wait for cron.
+      await ctx.db.insert("reminderAttempts", {
+        appointmentId: args.appointmentId,
+        patientId: args.patientId,
+        reminderType,
+        targetDate: args.appointmentDateTime,
+        attemptedAt: now.toISOString(),
+        status: "skipped_booking_confirmation",
+        reasonCode: "BOOKING_CONFIRMATION",
+        note:
+          reminderType === "24h"
+            ? `Skipped 24h reminder because booking confirmation SMS was sent at booking time (~${hoursUntil.toFixed(
+                2
+              )}h before appointment).`
+            : `Skipped 1h reminder because booking confirmation SMS was sent at booking time (~${hoursUntil.toFixed(
+                2
+              )}h before appointment).`,
+        detailsJson: JSON.stringify({
+          bookedAt: now.toISOString(),
+          appointmentDateTime: args.appointmentDateTime,
+          hoursUntilAtBooking: hoursUntil,
+          suppressionWindowHours:
+            reminderType === "24h"
+              ? [BOOKING_SUPPRESS_24H_START, BOOKING_SUPPRESS_24H_END]
+              : [BOOKING_SUPPRESS_1H_START, BOOKING_SUPPRESS_1H_END],
+        }),
+        teamId: args.teamId,
+      });
+
+      return true;
+    };
+
+    // Only suppress the 24h reminder if booking confirmation was sent within 24h–24h45m.
+    if (hoursUntil >= BOOKING_SUPPRESS_24H_START && hoursUntil < BOOKING_SUPPRESS_24H_END) {
+      marked.marked24h = await maybeInsertSuppression("24h");
+      if (marked.marked24h) {
+        console.log(
+          `Suppressed 24h reminder for appointment ${args.appointmentId} (booking confirmation at ${hoursUntil.toFixed(
+            2
+          )}h before appointment)`
+        );
+      }
     }
 
-    return { marked24h: false };
+    // Only suppress the 1h reminder if booking confirmation was sent within 1h–1h45m.
+    if (hoursUntil >= BOOKING_SUPPRESS_1H_START && hoursUntil < BOOKING_SUPPRESS_1H_END) {
+      marked.marked1h = await maybeInsertSuppression("1h");
+      if (marked.marked1h) {
+        console.log(
+          `Suppressed 1h reminder for appointment ${args.appointmentId} (booking confirmation at ${hoursUntil.toFixed(
+            2
+          )}h before appointment)`
+        );
+      }
+    }
+
+    return marked;
   },
 });
 
@@ -745,6 +1452,7 @@ export const seedRemindersTestData = internalMutation({
         dateTime: appointmentDateTime,
         teamId,
         notes: `Seeded for reminders test (${minutesFromNow}m from now)`,
+        status: "scheduled",
       });
 
       return { appointmentId, patientId, phone, name: patientName, dateTime: appointmentDateTime };
