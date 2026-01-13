@@ -269,7 +269,8 @@ export const checkAndSendReminders = internalAction({
     };
 
     const noteFor = (status: ReminderAttemptStatus, reason: ReminderAttemptReasonCode): string => {
-      if (status === "succeeded") return "SMS reminder sent successfully.";
+      if (status === "succeeded")
+        return "SMS reminder sent successfully. It may take 1–3 minutes to arrive on the patient's phone.";
       if (status === "skipped_quiet_hours") return "Reminder not sent due to quiet hours.";
       if (status === "skipped_booking_confirmation")
         return "Skipped because booking confirmation SMS already covered this reminder window.";
