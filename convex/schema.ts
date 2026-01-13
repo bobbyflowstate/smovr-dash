@@ -47,6 +47,22 @@ export default defineSchema({
     .index("by_patient_type_date", ["patientId", "reminderType", "targetDate"])
     .index("by_team", ["teamId"]),
 
+  reminderAttempts: defineTable({
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    reminderType: v.string(), // "24h", "1h", etc.
+    targetDate: v.string(), // appointment dateTime ISO (what the reminder is for)
+    attemptedAt: v.string(), // ISO timestamp when we attempted/decided
+    status: v.string(), // "succeeded" | "skipped_quiet_hours" | "skipped_already_sent" | "failed_precondition" | "failed_webhook" | ...
+    reasonCode: v.string(), // stable machine-readable reason
+    note: v.string(), // short human-readable explanation for dashboards
+    detailsJson: v.optional(v.string()), // JSON string with structured context for debugging
+    teamId: v.id("teams"),
+  })
+    .index("by_appointment_type", ["appointmentId", "reminderType"])
+    .index("by_team", ["teamId"])
+    .index("by_team_appointment", ["teamId", "appointmentId"]),
+
   logs: defineTable({
     appointmentId: v.id("appointments"),
     patientId: v.id("patients"),

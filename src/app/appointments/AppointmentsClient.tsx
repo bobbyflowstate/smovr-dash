@@ -179,6 +179,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Reminders</th>
                     <th className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -196,6 +197,14 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 max-w-xs truncate">
                         {appointment.notes || "—"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <Link
+                          href={`/appointments/${appointment._id}/reminders`}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium transition-colors"
+                        >
+                          View
+                        </Link>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button
@@ -219,6 +228,12 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">{appointment.patient?.name || 'N/A'}</p>
                       <p className="text-sm text-gray-600 dark:text-gray-400">{appointment.patient?.phone}</p>
+                      <Link
+                        href={`/appointments/${appointment._id}/reminders`}
+                        className="inline-block mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium transition-colors"
+                      >
+                        View reminder attempts
+                      </Link>
                     </div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {formatTimeInAppointmentTimezone(new Date(appointment.dateTime))}

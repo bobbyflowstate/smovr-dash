@@ -1,8 +1,8 @@
-import { internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { sendSMSWebhook, formatReminder24hMessage, formatReminder1hMessage } from "./webhook_utils";
+import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult } from "./webhook_utils";
 import {
   REMINDER_WINDOWS_HOURS,
   getEligibleReminderRangesISO,
@@ -23,6 +23,30 @@ const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
 export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
 
+type ReminderAttemptStatus =
+  | "succeeded"
+  | "skipped_quiet_hours"
+  | "skipped_already_sent"
+  | "failed_precondition"
+  | "failed_webhook"
+  | "failed_processing";
+
+type ReminderAttemptReasonCode =
+  | "QUIET_HOURS"
+  | "ALREADY_SENT"
+  | "INVALID_QUIET_HOURS"
+  | "BASE_URL_NOT_CONFIGURED"
+  | "PATIENT_NOT_FOUND"
+  | "WEBHOOK_URL_NOT_CONFIGURED"
+  | "WEBHOOK_HTTP_NON_RETRYABLE"
+  | "WEBHOOK_HTTP_RETRY_EXHAUSTED"
+  | "WEBHOOK_TIMEOUT"
+  | "WEBHOOK_NETWORK_ERROR"
+  | "UNKNOWN_ERROR";
+
+const DEFAULT_QUIET_HOURS_START = 22; // 10pm
+const DEFAULT_QUIET_HOURS_END = 5; // 5am
+
 /**
  * Sends a 24h reminder webhook
  * @returns true if webhook was sent successfully, false otherwise
@@ -32,13 +56,19 @@ async function sendReminder24hWebhook(
   patientName: string | null,
   patientPhone: string,
   appointmentDate: Date
-): Promise<boolean> {
-  if (!BASE_URL) {
-    console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
-    return false;
-  }
-
+): Promise<SMSWebhookResult> {
   try {
+    if (!BASE_URL) {
+      console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "NETWORK_ERROR",
+        errorMessage: "BASE_URL_NOT_CONFIGURED",
+      };
+    }
+
     // Format message
     const message = formatReminder24hMessage(
       patientName,
@@ -49,11 +79,17 @@ async function sendReminder24hWebhook(
       HOSPITAL_ADDRESS
     );
     
-    // Send SMS webhook and return success status
-    return await sendSMSWebhook(patientPhone, message);
+    // Send SMS webhook and return detailed status
+    return await sendSMSWebhookDetailed(patientPhone, message);
   } catch (error) {
     console.error('Error preparing 24h reminder webhook:', error);
-    return false;
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -66,13 +102,19 @@ async function sendReminder1hWebhook(
   patientName: string | null,
   patientPhone: string,
   appointmentDate: Date
-): Promise<boolean> {
-  if (!BASE_URL) {
-    console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
-    return false;
-  }
-
+): Promise<SMSWebhookResult> {
   try {
+    if (!BASE_URL) {
+      console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "NETWORK_ERROR",
+        errorMessage: "BASE_URL_NOT_CONFIGURED",
+      };
+    }
+
     // Format message
     const message = formatReminder1hMessage(
       patientName,
@@ -83,11 +125,17 @@ async function sendReminder1hWebhook(
       HOSPITAL_ADDRESS
     );
     
-    // Send SMS webhook and return success status
-    return await sendSMSWebhook(patientPhone, message);
+    // Send SMS webhook and return detailed status
+    return await sendSMSWebhookDetailed(patientPhone, message);
   } catch (error) {
     console.error('Error preparing 1h reminder webhook:', error);
-    return false;
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -143,25 +191,24 @@ export const checkAndSendReminders = internalAction({
     // Check quiet hours first
     const quietStartStr = process.env.SMS_QUIET_HOURS_START;
     const quietEndStr = process.env.SMS_QUIET_HOURS_END;
+    const quietStart = quietStartStr ? parseInt(quietStartStr) : DEFAULT_QUIET_HOURS_START;
+    const quietEnd = quietEndStr ? parseInt(quietEndStr) : DEFAULT_QUIET_HOURS_END;
     
-    if (quietStartStr && quietEndStr) {
-      const quietStart = parseInt(quietStartStr);
-      const quietEnd = parseInt(quietEndStr);
-      
-      if (!isNaN(quietStart) && !isNaN(quietEnd)) {
-        if (!validateQuietHours(quietStart, quietEnd)) {
-          // Invalid quiet hours config - don't send reminders
-          console.log('Reminders cron: Invalid quiet hours configuration, skipping reminder check');
-          return;
-        } else {
-          const currentHour = getCurrentHourInTimezone(APPOINTMENT_TIMEZONE);
-          
-          if (isInQuietHours(currentHour, quietStart, quietEnd)) {
-            console.log(`Reminders cron: Skipping - current hour ${currentHour} is in quiet hours (${quietStart}-${quietEnd})`);
-            return;
-          }
-        }
-      }
+    // We no longer early-return during quiet hours. Instead we still compute eligibility
+    // and record a durable attempt per appointment/type with a clear "skipped_quiet_hours" reason.
+    const currentHour = getCurrentHourInTimezone(APPOINTMENT_TIMEZONE);
+    const quietHoursValid =
+      !isNaN(quietStart) && !isNaN(quietEnd) && validateQuietHours(quietStart, quietEnd);
+    const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
+
+    console.log(
+      `Reminders cron: timezone=${APPOINTMENT_TIMEZONE} currentHour=${currentHour} quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} inQuiet=${inQuietHours} (envSet=${Boolean(
+        quietStartStr && quietEndStr
+      )})`
+    );
+
+    if (!quietHoursValid) {
+      console.log('Reminders cron: Invalid quiet hours configuration; reminders will be marked failed_precondition');
     }
 
     // Get current time
@@ -185,6 +232,114 @@ export const checkAndSendReminders = internalAction({
       `Reminders cron: Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
     );
 
+    const mapWebhookFailureToReason = (result: SMSWebhookResult): ReminderAttemptReasonCode => {
+      if (result.ok) return "UNKNOWN_ERROR";
+      switch (result.failureReason) {
+        case "WEBHOOK_URL_NOT_CONFIGURED":
+          return "WEBHOOK_URL_NOT_CONFIGURED";
+        case "HTTP_NON_RETRYABLE":
+          return "WEBHOOK_HTTP_NON_RETRYABLE";
+        case "HTTP_RETRY_EXHAUSTED":
+          return "WEBHOOK_HTTP_RETRY_EXHAUSTED";
+        case "TIMEOUT":
+          return "WEBHOOK_TIMEOUT";
+        case "NETWORK_ERROR":
+        default:
+          return "WEBHOOK_NETWORK_ERROR";
+      }
+    };
+
+    const noteFor = (status: ReminderAttemptStatus, reason: ReminderAttemptReasonCode): string => {
+      if (status === "succeeded") return "SMS reminder sent successfully.";
+      if (status === "skipped_quiet_hours") return "Reminder not sent due to quiet hours.";
+      if (status === "skipped_already_sent") return "Reminder not sent because it was already recorded as sent.";
+      if (status === "failed_precondition") {
+        switch (reason) {
+          case "INVALID_QUIET_HOURS":
+            return "Reminder not sent because quiet hours configuration is invalid.";
+          case "BASE_URL_NOT_CONFIGURED":
+            return "Reminder not sent because BASE_URL is not configured for Convex.";
+          case "PATIENT_NOT_FOUND":
+            return "Reminder not sent because patient record was not found.";
+          default:
+            return "Reminder not sent due to a configuration/precondition failure.";
+        }
+      }
+      if (status === "failed_webhook") {
+        switch (reason) {
+          case "WEBHOOK_URL_NOT_CONFIGURED":
+            return "Reminder not sent because SMS webhook URL is not configured.";
+          case "WEBHOOK_HTTP_NON_RETRYABLE":
+            return "Reminder not sent because SMS webhook returned a non-retryable HTTP error.";
+          case "WEBHOOK_HTTP_RETRY_EXHAUSTED":
+            return "Reminder not sent because SMS webhook retries were exhausted.";
+          case "WEBHOOK_TIMEOUT":
+            return "Reminder not sent because SMS webhook requests timed out.";
+          case "WEBHOOK_NETWORK_ERROR":
+            return "Reminder not sent due to a network error calling the SMS webhook.";
+          default:
+            return "Reminder not sent due to SMS webhook failure.";
+        }
+      }
+      return "Reminder not sent due to an unexpected processing error.";
+    };
+
+    const shouldDedup = async (args: {
+      appointmentId: Id<"appointments">;
+      reminderType: "24h" | "1h";
+      status: ReminderAttemptStatus;
+      reasonCode: ReminderAttemptReasonCode;
+      nowISO: string;
+      dedupMinutes: number;
+    }): Promise<boolean> => {
+      const latest = await ctx.runQuery(internal.reminders.getLatestReminderAttempt, {
+        appointmentId: args.appointmentId,
+        reminderType: args.reminderType,
+      });
+      if (!latest) return false;
+      if (latest.status !== args.status || latest.reasonCode !== args.reasonCode) return false;
+      const last = new Date(latest.attemptedAt).getTime();
+      const nowMs = new Date(args.nowISO).getTime();
+      if (!isFinite(last) || !isFinite(nowMs)) return false;
+      const minutes = (nowMs - last) / (1000 * 60);
+      return minutes >= 0 && minutes < args.dedupMinutes;
+    };
+
+    const recordAttempt = async (args: {
+      appointmentId: Id<"appointments">;
+      patientId: Id<"patients">;
+      reminderType: "24h" | "1h";
+      targetDate: string;
+      teamId: Id<"teams">;
+      status: ReminderAttemptStatus;
+      reasonCode: ReminderAttemptReasonCode;
+      details: Record<string, unknown>;
+      dedupMinutes?: number;
+    }) => {
+      const dedupMinutes = args.dedupMinutes ?? 30;
+      const skip = await shouldDedup({
+        appointmentId: args.appointmentId,
+        reminderType: args.reminderType,
+        status: args.status,
+        reasonCode: args.reasonCode,
+        nowISO,
+        dedupMinutes,
+      });
+      if (skip) return;
+      await ctx.runMutation(internal.reminders.recordReminderAttempt, {
+        appointmentId: args.appointmentId,
+        patientId: args.patientId,
+        reminderType: args.reminderType,
+        targetDate: args.targetDate,
+        attemptedAt: nowISO,
+        status: args.status,
+        reasonCode: args.reasonCode,
+        note: noteFor(args.status, args.reasonCode),
+        detailsJson: JSON.stringify(args.details),
+        teamId: args.teamId,
+      });
+    };
+
     // Process each appointment
     for (const appointment of allAppointments) {
       try {
@@ -202,31 +357,128 @@ export const checkAndSendReminders = internalAction({
             }
           );
 
-          if (!existingReminder) {
+          if (existingReminder) {
+            await recordAttempt({
+              appointmentId: appointment._id,
+              patientId: appointment.patientId,
+              reminderType: "24h",
+              targetDate: appointment.dateTime,
+              teamId: appointment.teamId,
+              status: "skipped_already_sent",
+              reasonCode: "ALREADY_SENT",
+              details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+              dedupMinutes: 240,
+            });
+          } else {
             // Get patient details
             const patient = await ctx.runQuery(internal.reminders.getPatientById, {
               patientId: appointment.patientId,
             });
 
             if (patient) {
-              console.log(`Sending 24h reminder for appointment ${appointment._id}`);
-              const success = await sendReminder24hWebhook(
-                appointment._id,
-                patient.name || null,
-                patient.phone,
-                appointmentDate
-              );
-
-              // Only record reminder if it was sent successfully
-              if (success) {
-                await ctx.runMutation(internal.reminders.recordReminderSent, {
+              if (!quietHoursValid) {
+                await recordAttempt({
                   appointmentId: appointment._id,
                   patientId: appointment.patientId,
                   reminderType: "24h",
                   targetDate: appointment.dateTime,
                   teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "INVALID_QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  dedupMinutes: 60,
                 });
+              } else if (inQuietHours) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "24h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "skipped_quiet_hours",
+                  reasonCode: "QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  dedupMinutes: 60,
+                });
+              } else if (!BASE_URL) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "24h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "BASE_URL_NOT_CONFIGURED",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                  dedupMinutes: 240,
+                });
+              } else {
+                console.log(`Sending 24h reminder for appointment ${appointment._id}`);
+                const result = await sendReminder24hWebhook(
+                  appointment._id,
+                  patient.name || null,
+                  patient.phone,
+                  appointmentDate
+                );
+
+                if (result.ok) {
+                  await ctx.runMutation(internal.reminders.recordReminderSent, {
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "24h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                  });
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "24h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status: "succeeded",
+                    reasonCode: "UNKNOWN_ERROR",
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 5,
+                  });
+                } else {
+                  const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
+                  const status: ReminderAttemptStatus =
+                    reason === "BASE_URL_NOT_CONFIGURED" ? "failed_precondition" : "failed_webhook";
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "24h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status,
+                    reasonCode: reason,
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 30,
+                  });
+                }
               }
+            } else {
+              await recordAttempt({
+                appointmentId: appointment._id,
+                patientId: appointment.patientId,
+                reminderType: "24h",
+                targetDate: appointment.dateTime,
+                teamId: appointment.teamId,
+                status: "failed_precondition",
+                reasonCode: "PATIENT_NOT_FOUND",
+                details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                dedupMinutes: 240,
+              });
             }
           }
         }
@@ -242,36 +494,154 @@ export const checkAndSendReminders = internalAction({
             }
           );
 
-          if (!existingReminder) {
+          if (existingReminder) {
+            await recordAttempt({
+              appointmentId: appointment._id,
+              patientId: appointment.patientId,
+              reminderType: "1h",
+              targetDate: appointment.dateTime,
+              teamId: appointment.teamId,
+              status: "skipped_already_sent",
+              reasonCode: "ALREADY_SENT",
+              details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+              dedupMinutes: 120,
+            });
+          } else {
             // Get patient details
             const patient = await ctx.runQuery(internal.reminders.getPatientById, {
               patientId: appointment.patientId,
             });
 
             if (patient) {
-              console.log(`Sending 1h reminder for appointment ${appointment._id}`);
-              const success = await sendReminder1hWebhook(
-                appointment._id,
-                patient.name || null,
-                patient.phone,
-                appointmentDate
-              );
-
-              // Only record reminder if it was sent successfully
-              if (success) {
-                await ctx.runMutation(internal.reminders.recordReminderSent, {
+              if (!quietHoursValid) {
+                await recordAttempt({
                   appointmentId: appointment._id,
                   patientId: appointment.patientId,
                   reminderType: "1h",
                   targetDate: appointment.dateTime,
                   teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "INVALID_QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  dedupMinutes: 30,
                 });
+              } else if (inQuietHours) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "1h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "skipped_quiet_hours",
+                  reasonCode: "QUIET_HOURS",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil, quietStart, quietEnd, currentHour },
+                  dedupMinutes: 30,
+                });
+              } else if (!BASE_URL) {
+                await recordAttempt({
+                  appointmentId: appointment._id,
+                  patientId: appointment.patientId,
+                  reminderType: "1h",
+                  targetDate: appointment.dateTime,
+                  teamId: appointment.teamId,
+                  status: "failed_precondition",
+                  reasonCode: "BASE_URL_NOT_CONFIGURED",
+                  details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                  dedupMinutes: 120,
+                });
+              } else {
+                console.log(`Sending 1h reminder for appointment ${appointment._id}`);
+                const result = await sendReminder1hWebhook(
+                  appointment._id,
+                  patient.name || null,
+                  patient.phone,
+                  appointmentDate
+                );
+
+                if (result.ok) {
+                  await ctx.runMutation(internal.reminders.recordReminderSent, {
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "1h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                  });
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "1h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status: "succeeded",
+                    reasonCode: "UNKNOWN_ERROR",
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 5,
+                  });
+                } else {
+                  const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
+                  const status: ReminderAttemptStatus =
+                    reason === "BASE_URL_NOT_CONFIGURED" ? "failed_precondition" : "failed_webhook";
+                  await recordAttempt({
+                    appointmentId: appointment._id,
+                    patientId: appointment.patientId,
+                    reminderType: "1h",
+                    targetDate: appointment.dateTime,
+                    teamId: appointment.teamId,
+                    status,
+                    reasonCode: reason,
+                    details: {
+                      nowISO,
+                      appointmentDateTime: appointment.dateTime,
+                      hoursUntil,
+                      webhook: result,
+                    },
+                    dedupMinutes: 15,
+                  });
+                }
               }
+            } else {
+              await recordAttempt({
+                appointmentId: appointment._id,
+                patientId: appointment.patientId,
+                reminderType: "1h",
+                targetDate: appointment.dateTime,
+                teamId: appointment.teamId,
+                status: "failed_precondition",
+                reasonCode: "PATIENT_NOT_FOUND",
+                details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+                dedupMinutes: 120,
+              });
             }
           }
         }
       } catch (error) {
         console.error(`Error processing appointment ${appointment._id}:`, error);
+        // Record a durable processing failure so we can explain "why not sent"
+        try {
+          await ctx.runMutation(internal.reminders.recordReminderAttempt, {
+            appointmentId: appointment._id,
+            patientId: appointment.patientId,
+            reminderType: "24h", // best-effort; actual type depends on window
+            targetDate: appointment.dateTime,
+            attemptedAt: nowISO,
+            status: "failed_processing",
+            reasonCode: "UNKNOWN_ERROR",
+            note: "Reminder not sent due to an internal processing error.",
+            detailsJson: JSON.stringify({
+              nowISO,
+              appointmentDateTime: appointment.dateTime,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            teamId: appointment.teamId,
+          });
+        } catch {
+          // If logging fails, still continue with next appointment
+        }
         // Continue with next appointment - don't fail entire batch
       }
     }
@@ -591,6 +961,117 @@ export const getPatientById = internalQuery({
   },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.patientId);
+  },
+});
+
+/**
+ * Query: Get the latest reminder attempt for an appointment + reminderType.
+ * Used for deduping noisy statuses (quiet hours, webhook failures).
+ */
+export const getLatestReminderAttempt = internalQuery({
+  args: {
+    appointmentId: v.id("appointments"),
+    reminderType: v.union(v.literal("24h"), v.literal("1h")),
+  },
+  handler: async (ctx, args) => {
+    const attempts = await ctx.db
+      .query("reminderAttempts")
+      .withIndex("by_appointment_type", (q) =>
+        q.eq("appointmentId", args.appointmentId).eq("reminderType", args.reminderType)
+      )
+      .order("desc")
+      .take(1);
+    return attempts[0] ?? null;
+  },
+});
+
+/**
+ * Mutation: Record reminder attempt outcome (durable audit trail).
+ */
+export const recordReminderAttempt = internalMutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    reminderType: v.union(v.literal("24h"), v.literal("1h")),
+    targetDate: v.string(),
+    attemptedAt: v.string(),
+    status: v.string(),
+    reasonCode: v.string(),
+    note: v.string(),
+    detailsJson: v.optional(v.string()),
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("reminderAttempts", {
+      appointmentId: args.appointmentId,
+      patientId: args.patientId,
+      reminderType: args.reminderType,
+      targetDate: args.targetDate,
+      attemptedAt: args.attemptedAt,
+      status: args.status,
+      reasonCode: args.reasonCode,
+      note: args.note,
+      detailsJson: args.detailsJson,
+      teamId: args.teamId,
+    });
+  },
+});
+
+/**
+ * Query: Get reminder attempts for a given appointment (team-scoped).
+ * Intended for in-app debugging / CEO reporting.
+ */
+export const getReminderAttemptsByAppointment = internalQuery({
+  args: {
+    teamId: v.id("teams"),
+    appointmentId: v.id("appointments"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+    const attempts = await ctx.db
+      .query("reminderAttempts")
+      .withIndex("by_team_appointment", (q) =>
+        q.eq("teamId", args.teamId).eq("appointmentId", args.appointmentId)
+      )
+      .order("desc")
+      .take(limit);
+    return attempts;
+  },
+});
+
+/**
+ * Public query: Get reminder attempts for a specific appointment (team-scoped via userEmail).
+ * This is intended to power the authenticated dashboard so you can explain "why it didn't send."
+ */
+export const getReminderAttemptsForAppointment = query({
+  args: {
+    userEmail: v.string(),
+    appointmentId: v.id("appointments"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    if (!user) throw new Error("User not found in database");
+
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment || appointment.teamId !== user.teamId) {
+      // Hide existence across teams
+      throw new Error("Appointment not found");
+    }
+
+    const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+    const attempts = await ctx.db
+      .query("reminderAttempts")
+      .withIndex("by_team_appointment", (q) =>
+        q.eq("teamId", user.teamId).eq("appointmentId", args.appointmentId)
+      )
+      .order("desc")
+      .take(limit);
+    return attempts;
   },
 });
 
