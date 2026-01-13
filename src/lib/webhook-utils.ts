@@ -2,9 +2,10 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import {
-  sendSMSWebhook,
+  sendSMSWebhookDetailed,
   formatScheduleMessage,
   formatCancelMessage,
+  type SMSWebhookResult,
 } from '../../convex/webhook_utils';
 import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
 
@@ -20,7 +21,7 @@ export async function sendScheduleWebhook(
   patientId: Id<"patients">,
   phone: string,
   name: string | null
-): Promise<boolean> {
+): Promise<SMSWebhookResult> {
   try {
     // Get appointment and patient details
     const appointment = await convex.query(api.appointments.getById, {
@@ -29,7 +30,13 @@ export async function sendScheduleWebhook(
 
     if (!appointment) {
       console.error('Appointment not found for webhook:', appointmentId);
-      return false;
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "NETWORK_ERROR",
+        errorMessage: "APPOINTMENT_NOT_FOUND",
+      };
     }
 
     const patient = await convex.query(api.patients.getById, {
@@ -62,11 +69,17 @@ export async function sendScheduleWebhook(
     );
     
     // Send SMS webhook
-    return await sendSMSWebhook(phone, message);
+    return await sendSMSWebhookDetailed(phone, message);
   } catch (error) {
     console.error('Error preparing schedule webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment creation
-    return false;
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -80,7 +93,7 @@ export async function sendCancelWebhook(
   phone: string,
   name: string | null,
   appointmentDateTime: string
-): Promise<void> {
+): Promise<SMSWebhookResult> {
   try {
     const appointment = await convex.query(api.appointments.getById, {
       appointmentId,
@@ -101,9 +114,16 @@ export async function sendCancelWebhook(
     const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress);
     
     // Send SMS webhook
-    await sendSMSWebhook(phone, message);
+    return await sendSMSWebhookDetailed(phone, message);
   } catch (error) {
     console.error('Error preparing cancel webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment cancellation
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 }

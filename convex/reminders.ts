@@ -48,6 +48,23 @@ type ReminderAttemptReasonCode =
   | "WEBHOOK_NETWORK_ERROR"
   | "UNKNOWN_ERROR";
 
+function mapWebhookFailureToReason(result: SMSWebhookResult): ReminderAttemptReasonCode {
+  if (result.ok) return "SENT";
+  switch (result.failureReason) {
+    case "WEBHOOK_URL_NOT_CONFIGURED":
+      return "WEBHOOK_URL_NOT_CONFIGURED";
+    case "HTTP_NON_RETRYABLE":
+      return "WEBHOOK_HTTP_NON_RETRYABLE";
+    case "HTTP_RETRY_EXHAUSTED":
+      return "WEBHOOK_HTTP_RETRY_EXHAUSTED";
+    case "TIMEOUT":
+      return "WEBHOOK_TIMEOUT";
+    case "NETWORK_ERROR":
+    default:
+      return "WEBHOOK_NETWORK_ERROR";
+  }
+}
+
 const DEFAULT_QUIET_HOURS_START = 22; // 10pm
 const DEFAULT_QUIET_HOURS_END = 5; // 5am
 
@@ -250,23 +267,6 @@ export const checkAndSendReminders = internalAction({
     console.log(
       `Reminders cron: Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
     );
-
-    const mapWebhookFailureToReason = (result: SMSWebhookResult): ReminderAttemptReasonCode => {
-      if (result.ok) return "UNKNOWN_ERROR";
-      switch (result.failureReason) {
-        case "WEBHOOK_URL_NOT_CONFIGURED":
-          return "WEBHOOK_URL_NOT_CONFIGURED";
-        case "HTTP_NON_RETRYABLE":
-          return "WEBHOOK_HTTP_NON_RETRYABLE";
-        case "HTTP_RETRY_EXHAUSTED":
-          return "WEBHOOK_HTTP_RETRY_EXHAUSTED";
-        case "TIMEOUT":
-          return "WEBHOOK_TIMEOUT";
-        case "NETWORK_ERROR":
-        default:
-          return "WEBHOOK_NETWORK_ERROR";
-      }
-    };
 
     const noteFor = (status: ReminderAttemptStatus, reason: ReminderAttemptReasonCode): string => {
       if (status === "succeeded")
@@ -1053,6 +1053,7 @@ export const getAllFutureAppointments = internalQuery({
     const allAppointments = await ctx.db
       .query("appointments")
       .withIndex("by_dateTime", (q) => q.gte("dateTime", args.nowISO))
+      .filter((q) => q.neq(q.field("status"), "cancelled"))
       .collect();
     
     return allAppointments;
@@ -1076,8 +1077,84 @@ export const getAppointmentsInRange = internalQuery({
       .withIndex("by_dateTime", (q) =>
         q.gte("dateTime", args.startISO).lt("dateTime", args.endISO)
       )
+      // Cancelled appointments should not receive reminders.
+      .filter((q) => q.neq(q.field("status"), "cancelled"))
       .collect();
     return appts;
+  },
+});
+
+/**
+ * PUBLIC Mutation: Record an SMS send attempt tied to an appointment.
+ *
+ * Used by the Next.js API to log booking confirmation + cancellation SMS sends
+ * so the admin UI can show a complete message history for an appointment.
+ */
+export const recordAppointmentSmsAttempt = mutation({
+  args: {
+    userEmail: v.string(),
+    appointmentId: v.id("appointments"),
+    patientId: v.id("patients"),
+    messageType: v.string(), // "booking_confirmation" | "cancellation" | etc.
+    targetDate: v.string(), // appointment dateTime ISO
+    webhookResult: v.object({
+      ok: v.boolean(),
+      attemptCount: v.number(),
+      httpStatus: v.union(v.number(), v.null()),
+      failureReason: v.union(v.string(), v.null()),
+      errorMessage: v.union(v.string(), v.null()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    // Enforce multi-tenancy via userEmail -> teamId.
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    if (!user) throw new Error("User not found in database.");
+
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment || appointment.teamId !== user.teamId) {
+      throw new Error("Appointment not found.");
+    }
+
+    // Optional safety: ensure the patient matches the appointment.
+    if (appointment.patientId !== args.patientId) {
+      throw new Error("Patient does not match appointment.");
+    }
+
+    const nowISO = new Date().toISOString();
+    const status: ReminderAttemptStatus = args.webhookResult.ok ? "succeeded" : "failed_webhook";
+    const reasonCode: ReminderAttemptReasonCode = args.webhookResult.ok
+      ? "SENT"
+      : mapWebhookFailureToReason(args.webhookResult as unknown as SMSWebhookResult);
+
+    const messageLabel =
+      args.messageType === "booking_confirmation"
+        ? "Booking confirmation SMS"
+        : args.messageType === "cancellation"
+          ? "Cancellation SMS"
+          : "SMS message";
+
+    const note = args.webhookResult.ok
+      ? `${messageLabel} sent successfully. It may take 1–3 minutes to arrive on the patient's phone.`
+      : `${messageLabel} not sent due to SMS webhook failure.`;
+
+    await ctx.db.insert("reminderAttempts", {
+      appointmentId: args.appointmentId,
+      patientId: args.patientId,
+      reminderType: args.messageType,
+      targetDate: args.targetDate,
+      attemptedAt: nowISO,
+      status,
+      reasonCode,
+      note,
+      detailsJson: JSON.stringify({
+        webhookResult: args.webhookResult,
+        appointmentDateTime: args.targetDate,
+      }),
+      teamId: appointment.teamId,
+    });
   },
 });
 
@@ -1470,6 +1547,7 @@ export const seedRemindersTestData = internalMutation({
         dateTime: appointmentDateTime,
         teamId,
         notes: `Seeded for reminders test (${minutesFromNow}m from now)`,
+        status: "scheduled",
       });
 
       return { appointmentId, patientId, phone, name: patientName, dateTime: appointmentDateTime };

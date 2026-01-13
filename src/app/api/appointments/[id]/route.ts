@@ -51,6 +51,8 @@ export async function GET(
         notes: appointment.notes || null,
         patientId: appointment.patientId,
         teamId: appointment.teamId,
+        status: (appointment as any).status || "scheduled",
+        cancelledAt: (appointment as any).cancelledAt || null,
       },
       patient: patient
         ? { _id: patient._id, name: patient.name || null, phone: patient.phone }
@@ -105,7 +107,7 @@ export async function DELETE(
 
     // 🔗 Send cancel webhook after successful cancellation
     if (patient) {
-      await sendCancelWebhook(
+      const cancelWebhookResult = await sendCancelWebhook(
         convex,
         appointmentId,
         appointment.patientId,
@@ -113,6 +115,16 @@ export async function DELETE(
         patient.name || null,
         appointment.dateTime
       );
+
+      // Durable audit trail: record cancellation SMS attempt.
+      await convex.mutation(api.reminders.recordAppointmentSmsAttempt, {
+        userEmail,
+        appointmentId,
+        patientId: appointment.patientId,
+        messageType: "cancellation",
+        targetDate: appointment.dateTime,
+        webhookResult: cancelWebhookResult,
+      });
     }
 
     return NextResponse.json({ success: true });

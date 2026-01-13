@@ -36,8 +36,19 @@ export const backfillTeamSettings = migrations.define({
   },
 });
 
+// Backfill appointment status so we can keep cancelled appointments for audit/history.
+export const backfillAppointmentStatus = migrations.define({
+  table: "appointments",
+  migrateOne: async (_ctx, appt) => {
+    const a = appt as any;
+    const status = a.status || "scheduled";
+    return { ...a, status };
+  },
+});
+
 // Runner for all migrations
 export const runAll = migrations.runner([
   internal.migrations.removePatientNames,
   internal.migrations.backfillTeamSettings,
+  internal.migrations.backfillAppointmentStatus,
 ]);

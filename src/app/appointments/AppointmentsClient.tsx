@@ -22,6 +22,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
   const [teamHospitalAddress, setTeamHospitalAddress] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [view, setView] = useState<"upcoming" | "cancelled">("upcoming");
   const [cancelConfirmationId, setCancelConfirmationId] = useState<Id<"appointments"> | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -30,7 +31,8 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
     const fetchAppointments = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('/api/appointments');
+        const includeCancelled = view === "cancelled" ? "1" : "0";
+        const response = await fetch(`/api/appointments?includeCancelled=${includeCancelled}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch appointments');
@@ -50,7 +52,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
     };
 
     fetchAppointments();
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -67,11 +69,17 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
 
   const filteredAppointments = appointments
     ?.filter((appointment) => {
-      // Filter out past appointments
+      const status = appointment.status || "scheduled";
       const appointmentDate = new Date(appointment.dateTime);
       const now = new Date();
-      if (appointmentDate < now) {
-        return false;
+
+      if (view === "upcoming") {
+        // Upcoming view: scheduled + future only
+        if (status === "cancelled") return false;
+        if (appointmentDate < now) return false;
+      } else {
+        // Cancelled view: cancelled appointments (include past for history)
+        if (status !== "cancelled") return false;
       }
       
       // Apply search filter
@@ -80,7 +88,14 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       const query = searchQuery.toLowerCase();
       return patientPhone.includes(query) || patientName.toLowerCase().includes(query);
     })
-    .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+    .sort((a, b) => {
+      if (view === "cancelled") {
+        const aKey = new Date(a.cancelledAt || a.dateTime).getTime();
+        const bKey = new Date(b.cancelledAt || b.dateTime).getTime();
+        return bKey - aKey;
+      }
+      return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+    });
 
   const groupedAppointments = filteredAppointments?.reduce((acc, appointment) => {
     const date = formatFullDateInAppointmentTimezone(new Date(appointment.dateTime));
@@ -106,7 +121,8 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
         }
 
         // Refresh appointments list
-        const appointmentsResponse = await fetch('/api/appointments');
+        const includeCancelled = view === "cancelled" ? "1" : "0";
+        const appointmentsResponse = await fetch(`/api/appointments?includeCancelled=${includeCancelled}`);
         if (appointmentsResponse.ok) {
           const data = await appointmentsResponse.json();
           setAppointments(data.appointments);
@@ -128,7 +144,9 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upcoming Appointments</h1>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              {view === "upcoming" ? "Upcoming Appointments" : "Cancelled Appointments"}
+            </h1>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               Viewing appointments for: {currentTeamName}
             </p>
@@ -172,6 +190,30 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
             </svg>
           </Link>
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setView("upcoming")}
+            className={
+              view === "upcoming"
+                ? "px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white"
+                : "px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }
+          >
+            Upcoming
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("cancelled")}
+            className={
+              view === "cancelled"
+                ? "px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white"
+                : "px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }
+          >
+            Cancelled
+          </button>
         </div>
       </div>
 
@@ -242,12 +284,16 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                         </Link>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => handleCancelClick(appointment._id)}
-                          className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors"
-                        >
-                          {cancelConfirmationId === appointment._id ? "Are you sure?" : "Cancel"}
-                        </button>
+                        {(appointment.status || "scheduled") === "cancelled" ? (
+                          <span className="text-gray-500 dark:text-gray-400">Cancelled</span>
+                        ) : (
+                          <button
+                            onClick={() => handleCancelClick(appointment._id)}
+                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors"
+                          >
+                            {cancelConfirmationId === appointment._id ? "Are you sure?" : "Cancel"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -278,12 +324,16 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{appointment.notes}</p>
                   )}
                   <div className="mt-4 text-right">
-                    <button
-                      onClick={() => handleCancelClick(appointment._id)}
-                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors"
-                    >
-                      {cancelConfirmationId === appointment._id ? "Are you sure?" : "Cancel"}
-                    </button>
+                    {(appointment.status || "scheduled") === "cancelled" ? (
+                      <span className="text-gray-500 dark:text-gray-400">Cancelled</span>
+                    ) : (
+                      <button
+                        onClick={() => handleCancelClick(appointment._id)}
+                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors"
+                      >
+                        {cancelConfirmationId === appointment._id ? "Are you sure?" : "Cancel"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

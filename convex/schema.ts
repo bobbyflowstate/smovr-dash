@@ -32,6 +32,9 @@ export default defineSchema({
     dateTime: v.string(),
     notes: v.optional(v.string()),
     metadata: v.optional(v.object({})), // Flexible JSON metadata
+    status: v.optional(v.string()), // "scheduled" | "cancelled"
+    cancelledAt: v.optional(v.string()), // ISO timestamp when cancelled
+    cancelledBy: v.optional(v.string()), // user email who cancelled (if known)
     teamId: v.id("teams"),
   })
     .index("by_team", ["teamId"])

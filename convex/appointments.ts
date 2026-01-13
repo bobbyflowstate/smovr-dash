@@ -4,6 +4,7 @@ import { v } from "convex/values";
 export const get = query({
   args: {
     userEmail: v.string(),
+    includeCancelled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     console.log("appointments.get: Getting appointments for user:", args.userEmail);
@@ -25,10 +26,15 @@ export const get = query({
     // Get team information
     const team = await ctx.db.get(teamId);
 
-    const appointments = await ctx.db
+    let appointmentsQuery = ctx.db
       .query("appointments")
-      .withIndex("by_team", (q) => q.eq("teamId", teamId))
-      .collect();
+      .withIndex("by_team", (q) => q.eq("teamId", teamId));
+
+    if (!args.includeCancelled) {
+      appointmentsQuery = appointmentsQuery.filter((q) => q.neq(q.field("status"), "cancelled"));
+    }
+
+    const appointments = await appointmentsQuery.collect();
 
     const appointmentsWithPatient = await Promise.all(
       appointments.map(async (appointment) => {
@@ -102,7 +108,8 @@ export const getExistingForPatient = query({
       .filter((q) =>
         q.and(
           q.eq(q.field("patientId"), patient._id),
-          q.gte(q.field("dateTime"), now)
+          q.gte(q.field("dateTime"), now),
+          q.neq(q.field("status"), "cancelled")
         )
       )
       .collect();
@@ -150,9 +157,13 @@ export const cancel = mutation({
     const appointment = await ctx.db.get(args.id);
 
     if (appointment && appointment.teamId === teamId) {
-      await ctx.db.delete(args.id);
+      await ctx.db.patch(args.id, {
+        status: "cancelled",
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: args.userEmail,
+      });
     } else {
-      throw new Error("You do not have permission to delete this appointment.");
+      throw new Error("You do not have permission to cancel this appointment.");
     }
   },
 });

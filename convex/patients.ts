@@ -55,7 +55,9 @@ export const scheduleAppointment = mutation({
       .filter((q) =>
         q.and(
           q.eq(q.field("patientId"), patientId),
-          q.eq(q.field("dateTime"), args.appointmentDateTime)
+          q.eq(q.field("dateTime"), args.appointmentDateTime),
+          // Cancelled appointments should not block re-booking at the same time.
+          q.neq(q.field("status"), "cancelled")
         )
       )
       .first();
@@ -72,6 +74,7 @@ export const scheduleAppointment = mutation({
       dateTime: args.appointmentDateTime,
       notes: args.notes,
       metadata: args.metadata,
+      status: "scheduled",
       teamId,
     });
 
