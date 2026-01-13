@@ -9,6 +9,10 @@ import {
   convertComponentsToTimezoneUTC,
 } from '@/lib/timezone-utils';
 import { sendScheduleWebhook } from '@/lib/webhook-utils';
+import {
+  fetchAppointmentsWithFilter,
+  recordBookingConfirmationAndMaybeSuppress,
+} from '@/lib/appointments-integration';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -29,8 +33,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const includeCancelled = searchParams.get('includeCancelled') === '1';
 
-    // 🔒 Server calls Convex with validated user email
-    const result = await convex.query(api.appointments.get, {
+    const result = await fetchAppointmentsWithFilter({
+      convex,
+      api,
       userEmail,
       includeCancelled,
     });
@@ -152,36 +157,18 @@ export async function POST(request: NextRequest) {
 
     // 🔗 Send webhook if new appointment was created
     if (result.newAppointment && result.appointmentId && result.patientId) {
-      const scheduleWebhookResult = await sendScheduleWebhook(
+      await recordBookingConfirmationAndMaybeSuppress({
         convex,
-        result.appointmentId as Id<"appointments">,
-        result.patientId as Id<"patients">,
-        body.phone,
-        body.name || null
-      );
-
-      // Durable audit trail: record booking confirmation SMS attempt.
-      await convex.mutation(api.reminders.recordAppointmentSmsAttempt, {
+        api,
         userEmail,
         appointmentId: result.appointmentId as Id<"appointments">,
         patientId: result.patientId as Id<"patients">,
-        messageType: "booking_confirmation",
-        targetDate: timezoneConvertedDateTime,
-        webhookResult: scheduleWebhookResult,
+        teamId: result.teamId ? (result.teamId as Id<"teams">) : null,
+        appointmentDateTime: timezoneConvertedDateTime,
+        phone: body.phone,
+        name: body.name || null,
+        sendScheduleWebhook,
       });
-
-      // If booked within the 24h reminder window, mark the 24h reminder as "sent"
-      // This prevents double-notification (confirmation + 24h reminder)
-      // IMPORTANT: Only do this if the schedule webhook actually succeeded.
-      // Otherwise we'd suppress the 24h reminder even though no SMS was delivered.
-      if (result.teamId && scheduleWebhookResult.ok) {
-        await convex.mutation(api.reminders.markReminderSentIfInWindow, {
-          appointmentId: result.appointmentId as Id<"appointments">,
-          patientId: result.patientId as Id<"patients">,
-          appointmentDateTime: timezoneConvertedDateTime,
-          teamId: result.teamId as Id<"teams">,
-        });
-      }
     }
 
     return NextResponse.json({

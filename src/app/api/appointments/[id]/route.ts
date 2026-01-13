@@ -5,6 +5,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { sendCancelWebhook } from '@/lib/webhook-utils';
+import { recordCancellationSmsAttempt } from '@/lib/appointments-integration';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -107,23 +108,16 @@ export async function DELETE(
 
     // 🔗 Send cancel webhook after successful cancellation
     if (patient) {
-      const cancelWebhookResult = await sendCancelWebhook(
+      await recordCancellationSmsAttempt({
         convex,
-        appointmentId,
-        appointment.patientId,
-        patient.phone,
-        patient.name || null,
-        appointment.dateTime
-      );
-
-      // Durable audit trail: record cancellation SMS attempt.
-      await convex.mutation(api.reminders.recordAppointmentSmsAttempt, {
+        api,
         userEmail,
         appointmentId,
         patientId: appointment.patientId,
-        messageType: "cancellation",
-        targetDate: appointment.dateTime,
-        webhookResult: cancelWebhookResult,
+        appointmentDateTime: appointment.dateTime,
+        patientPhone: patient.phone,
+        patientName: patient.name || null,
+        sendCancelWebhook,
       });
     }
 
