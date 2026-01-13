@@ -37,6 +37,7 @@ type ReminderAttemptReasonCode =
   | "QUIET_HOURS"
   | "BOOKING_CONFIRMATION"
   | "ALREADY_SENT"
+  | "SENT"
   | "INVALID_QUIET_HOURS"
   | "BASE_URL_NOT_CONFIGURED"
   | "PATIENT_NOT_FOUND"
@@ -517,7 +518,7 @@ export const checkAndSendReminders = internalAction({
                     targetDate: appointment.dateTime,
                     teamId: appointment.teamId,
                     status: "succeeded",
-                    reasonCode: "UNKNOWN_ERROR",
+                    reasonCode: "SENT",
                     details: {
                       nowISO,
                       appointmentDateTime: appointment.dateTime,
@@ -680,7 +681,7 @@ export const checkAndSendReminders = internalAction({
                     targetDate: appointment.dateTime,
                     teamId: appointment.teamId,
                     status: "succeeded",
-                    reasonCode: "UNKNOWN_ERROR",
+                    reasonCode: "SENT",
                     details: {
                       nowISO,
                       appointmentDateTime: appointment.dateTime,

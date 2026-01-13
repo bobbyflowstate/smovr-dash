@@ -134,19 +134,19 @@ describe("reminder logic", () => {
   it("treats window boundaries as start-inclusive / end-exclusive", () => {
     const appt = utc(2026, 1, 10, 12, 0, 0);
 
-    // Exactly 0.5 hours before -> in 1h window
+    // Exactly 55 minutes before -> in 1h window
     expect(
       getReminderTypesToSend({
-        now: utc(2026, 1, 10, 11, 30, 0),
+        now: utc(2026, 1, 10, 11, 5, 0),
         appointmentDateTime: appt,
         alreadySent: {},
       })
     ).toContain("1h");
 
-    // Exactly 2 hours before -> NOT in 1h window (endExclusive)
+    // Exactly 65 minutes before -> NOT in 1h window (endExclusive)
     expect(
       getReminderTypesToSend({
-        now: utc(2026, 1, 10, 10, 0, 0),
+        now: utc(2026, 1, 10, 10, 55, 0),
         appointmentDateTime: appt,
         alreadySent: {},
       })
@@ -195,7 +195,7 @@ describe("reminder logic", () => {
 
   it("does not return reminder types that are already sent", () => {
     const appt = utc(2026, 1, 10, 12, 0, 0);
-    const now = utc(2026, 1, 10, 11, 30, 0); // 0.5h window
+    const now = utc(2026, 1, 10, 11, 5, 0); // 55m window
 
     expect(
       getReminderTypesToSend({

@@ -20,7 +20,8 @@ export type ReminderWindowsHours = Record<
  */
 export const REMINDER_WINDOWS_HOURS: ReminderWindowsHours = {
   "24h": { startInclusive: 12, endExclusive: 25 },
-  "1h": { startInclusive: 0.5, endExclusive: 2 },
+  // With minute-level checks, tighten to ~1 hour (55m–65m).
+  "1h": { startInclusive: 55 / 60, endExclusive: 65 / 60 },
 };
 
 export function hoursUntil(appointmentDateTime: Date, now: Date): number {
