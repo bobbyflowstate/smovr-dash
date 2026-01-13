@@ -10,6 +10,19 @@ import {
   isWithinWindow,
 } from "./reminder_logic";
 import { assertDevEnvironment } from "./env";
+import {
+  BOOKING_SUPPRESS_1H_END,
+  BOOKING_SUPPRESS_1H_START,
+  BOOKING_SUPPRESS_24H_END,
+  BOOKING_SUPPRESS_24H_START,
+  DEFAULT_QUIET_HOURS_END,
+  DEFAULT_QUIET_HOURS_START,
+  isInQuietHours,
+  mapWebhookFailureToReason,
+  noteForAttempt,
+  type ReminderAttemptReasonCode,
+  type ReminderAttemptStatus,
+} from "./reminder_policies";
 
 const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
 const DEFAULT_HOSPITAL_ADDRESS =
@@ -20,63 +33,9 @@ const DEFAULT_HOSPITAL_ADDRESS =
 // Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
 const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
 
-// Reminder type constants for type safety
 export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
-
-type ReminderAttemptStatus =
-  | "succeeded"
-  | "skipped_quiet_hours"
-  | "skipped_booking_confirmation"
-  | "skipped_already_sent"
-  | "failed_precondition"
-  | "failed_webhook"
-  | "failed_processing";
-
-type ReminderAttemptReasonCode =
-  | "QUIET_HOURS"
-  | "BOOKING_CONFIRMATION"
-  | "ALREADY_SENT"
-  | "SENT"
-  | "INVALID_QUIET_HOURS"
-  | "BASE_URL_NOT_CONFIGURED"
-  | "PATIENT_NOT_FOUND"
-  | "WEBHOOK_URL_NOT_CONFIGURED"
-  | "WEBHOOK_HTTP_NON_RETRYABLE"
-  | "WEBHOOK_HTTP_RETRY_EXHAUSTED"
-  | "WEBHOOK_TIMEOUT"
-  | "WEBHOOK_NETWORK_ERROR"
-  | "UNKNOWN_ERROR";
-
-function mapWebhookFailureToReason(result: SMSWebhookResult): ReminderAttemptReasonCode {
-  if (result.ok) return "SENT";
-  switch (result.failureReason) {
-    case "WEBHOOK_URL_NOT_CONFIGURED":
-      return "WEBHOOK_URL_NOT_CONFIGURED";
-    case "HTTP_NON_RETRYABLE":
-      return "WEBHOOK_HTTP_NON_RETRYABLE";
-    case "HTTP_RETRY_EXHAUSTED":
-      return "WEBHOOK_HTTP_RETRY_EXHAUSTED";
-    case "TIMEOUT":
-      return "WEBHOOK_TIMEOUT";
-    case "NETWORK_ERROR":
-    default:
-      return "WEBHOOK_NETWORK_ERROR";
-  }
-}
-
-const DEFAULT_QUIET_HOURS_START = 22; // 10pm
-const DEFAULT_QUIET_HOURS_END = 5; // 5am
-
-// Booking-confirmation suppression windows (in hours before appointment).
-// If the appointment is booked within these windows and the booking confirmation SMS succeeds,
-// we suppress the corresponding reminder to avoid double-texting.
-//
-// Keep the 24h suppression aligned to the 24h reminder send window (23h50m–24h10m).
-const BOOKING_SUPPRESS_24H_START = 1430 / 60; // 23h50m
-const BOOKING_SUPPRESS_24H_END = 1450 / 60; // 24h10m
-const BOOKING_SUPPRESS_1H_START = 1; // 1h
-const BOOKING_SUPPRESS_1H_END = 1.25; // 1h15m
+// Reminder attempt types, constants, and pure policy helpers live in reminder_policies.ts so we can unit test them.
 
 /**
  * Sends a 24h reminder webhook
@@ -188,19 +147,6 @@ function validateQuietHours(quietStart: number, quietEnd: number): boolean {
 }
 
 /**
- * Checks if current time is within quiet hours
- */
-function isInQuietHours(currentHour: number, quietStart: number, quietEnd: number): boolean {
-  if (quietStart <= quietEnd) {
-    // Quiet hours don't span midnight (e.g., 8-22)
-    return currentHour >= quietStart && currentHour < quietEnd;
-  } else {
-    // Quiet hours span midnight (e.g., 22-8)
-    return currentHour >= quietStart || currentHour < quietEnd;
-  }
-}
-
-/**
  * Gets current hour in appointment timezone
  */
 function getCurrentHourInTimezone(timezone: string): number {
@@ -268,44 +214,7 @@ export const checkAndSendReminders = internalAction({
       `Reminders cron: Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
     );
 
-    const noteFor = (status: ReminderAttemptStatus, reason: ReminderAttemptReasonCode): string => {
-      if (status === "succeeded")
-        return "SMS reminder sent successfully. It may take 1–3 minutes to arrive on the patient's phone.";
-      if (status === "skipped_quiet_hours") return "Reminder not sent due to quiet hours.";
-      if (status === "skipped_booking_confirmation")
-        return "Skipped because booking confirmation SMS already covered this reminder window.";
-      if (status === "skipped_already_sent") return "Reminder not sent because it was already recorded as sent.";
-      if (status === "failed_precondition") {
-        const itNote = " Please contact your IT department.";
-        switch (reason) {
-          case "INVALID_QUIET_HOURS":
-            return `Reminder not sent because quiet hours configuration is invalid.${itNote}`;
-          case "BASE_URL_NOT_CONFIGURED":
-            return `Reminder not sent because BASE_URL is not configured for Convex.${itNote}`;
-          case "PATIENT_NOT_FOUND":
-            return `Reminder not sent because patient record was not found.${itNote}`;
-          default:
-            return `Reminder not sent due to a configuration/precondition failure.${itNote}`;
-        }
-      }
-      if (status === "failed_webhook") {
-        switch (reason) {
-          case "WEBHOOK_URL_NOT_CONFIGURED":
-            return "Reminder not sent because SMS webhook URL is not configured.";
-          case "WEBHOOK_HTTP_NON_RETRYABLE":
-            return "Reminder not sent because SMS webhook returned a non-retryable HTTP error.";
-          case "WEBHOOK_HTTP_RETRY_EXHAUSTED":
-            return "Reminder not sent because SMS webhook retries were exhausted.";
-          case "WEBHOOK_TIMEOUT":
-            return "Reminder not sent because SMS webhook requests timed out.";
-          case "WEBHOOK_NETWORK_ERROR":
-            return "Reminder not sent due to a network error calling the SMS webhook.";
-          default:
-            return "Reminder not sent due to SMS webhook failure.";
-        }
-      }
-      return "Reminder not sent due to an unexpected processing error.";
-    };
+    const noteFor = noteForAttempt;
 
     const reminderSourceDisplay = (source: unknown): { sourceRaw: string | null; sourceDisplay: string | null } => {
       const raw = typeof source === "string" ? source : null;
