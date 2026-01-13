@@ -8,6 +8,63 @@ import { sendCancelWebhook } from '@/lib/webhook-utils';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
+// GET /api/appointments/[id] - Get appointment details (authenticated)
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+
+    if (!isAuthenticated || !claims?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userEmail = claims.email;
+    const appointmentId = params.id as Id<"appointments">;
+
+    // Get user to find their teamId (enforce multi-tenancy)
+    const userInfo = await convex.query(api.users.getUserWithTeam, {
+      userEmail,
+    });
+
+    if (!userInfo?.teamId) {
+      return NextResponse.json({ error: 'User or team not found' }, { status: 404 });
+    }
+
+    const appointment = await convex.query(api.appointments.getById, {
+      appointmentId,
+    });
+
+    if (!appointment || appointment.teamId !== (userInfo.teamId as Id<"teams">)) {
+      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+    }
+
+    const patient = await convex.query(api.patients.getById, {
+      patientId: appointment.patientId,
+    });
+
+    return NextResponse.json({
+      appointment: {
+        _id: appointment._id,
+        dateTime: appointment.dateTime,
+        notes: appointment.notes || null,
+        patientId: appointment.patientId,
+        teamId: appointment.teamId,
+      },
+      patient: patient
+        ? { _id: patient._id, name: patient.name || null, phone: patient.phone }
+        : null,
+    });
+  } catch (error) {
+    console.error('Error fetching appointment:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE /api/appointments/[id] - Cancel appointment
 export async function DELETE(
   request: NextRequest,
