@@ -26,6 +26,7 @@ const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
 type ReminderAttemptStatus =
   | "succeeded"
   | "skipped_quiet_hours"
+  | "skipped_booking_confirmation"
   | "skipped_already_sent"
   | "failed_precondition"
   | "failed_webhook"
@@ -33,6 +34,7 @@ type ReminderAttemptStatus =
 
 type ReminderAttemptReasonCode =
   | "QUIET_HOURS"
+  | "BOOKING_CONFIRMATION"
   | "ALREADY_SENT"
   | "INVALID_QUIET_HOURS"
   | "BASE_URL_NOT_CONFIGURED"
@@ -46,6 +48,14 @@ type ReminderAttemptReasonCode =
 
 const DEFAULT_QUIET_HOURS_START = 22; // 10pm
 const DEFAULT_QUIET_HOURS_END = 5; // 5am
+
+// Booking-confirmation suppression windows (in hours before appointment).
+// If the appointment is booked within these windows and the booking confirmation SMS succeeds,
+// we suppress the corresponding reminder to avoid double-texting.
+const BOOKING_SUPPRESS_24H_START = 24; // 24h
+const BOOKING_SUPPRESS_24H_END = 24.75; // 24h45m
+const BOOKING_SUPPRESS_1H_START = 1; // 1h
+const BOOKING_SUPPRESS_1H_END = 1.75; // 1h45m
 
 /**
  * Sends a 24h reminder webhook
@@ -254,6 +264,8 @@ export const checkAndSendReminders = internalAction({
     const noteFor = (status: ReminderAttemptStatus, reason: ReminderAttemptReasonCode): string => {
       if (status === "succeeded") return "SMS reminder sent successfully.";
       if (status === "skipped_quiet_hours") return "Reminder not sent due to quiet hours.";
+      if (status === "skipped_booking_confirmation")
+        return "Skipped because booking confirmation SMS already covered this reminder window.";
       if (status === "skipped_already_sent") return "Reminder not sent because it was already recorded as sent.";
       if (status === "failed_precondition") {
         switch (reason) {
@@ -284,6 +296,16 @@ export const checkAndSendReminders = internalAction({
         }
       }
       return "Reminder not sent due to an unexpected processing error.";
+    };
+
+    const formatHoursHuman = (hours: number): string => {
+      if (!isFinite(hours)) return `${hours}`;
+      const totalMinutes = Math.round(hours * 60);
+      const h = Math.floor(totalMinutes / 60);
+      const m = Math.abs(totalMinutes % 60);
+      if (h === 0) return `${m}m`;
+      if (m === 0) return `${h}h`;
+      return `${h}h ${m}m`;
     };
 
     const shouldDedup = async (args: {
@@ -317,6 +339,7 @@ export const checkAndSendReminders = internalAction({
       reasonCode: ReminderAttemptReasonCode;
       details: Record<string, unknown>;
       dedupMinutes?: number;
+      noteOverride?: string;
     }) => {
       const dedupMinutes = args.dedupMinutes ?? 30;
       const skip = await shouldDedup({
@@ -336,7 +359,7 @@ export const checkAndSendReminders = internalAction({
         attemptedAt: nowISO,
         status: args.status,
         reasonCode: args.reasonCode,
-        note: noteFor(args.status, args.reasonCode),
+        note: args.noteOverride ?? noteFor(args.status, args.reasonCode),
         detailsJson: JSON.stringify(args.details),
         teamId: args.teamId,
       });
@@ -360,23 +383,35 @@ export const checkAndSendReminders = internalAction({
           );
 
           if (existingReminder) {
+            const source = (existingReminder as any).source ?? null;
+            const sentAt = (existingReminder as any).sentAt as string | undefined;
+            const sentAtHoursBefore =
+              sentAt && appointment.dateTime
+                ? hoursUntilAppointment(new Date(appointment.dateTime), new Date(sentAt))
+                : null;
+            const isBookingConfirmation = source === "booking_confirmation";
+
             await recordAttempt({
               appointmentId: appointment._id,
               patientId: appointment.patientId,
               reminderType: "24h",
               targetDate: appointment.dateTime,
               teamId: appointment.teamId,
-              status: "skipped_already_sent",
-              reasonCode: "ALREADY_SENT",
+              status: isBookingConfirmation ? "skipped_booking_confirmation" : "skipped_already_sent",
+              reasonCode: isBookingConfirmation ? "BOOKING_CONFIRMATION" : "ALREADY_SENT",
+              noteOverride: isBookingConfirmation
+                ? `Skipped 24h reminder because booking confirmation SMS was sent ${sentAtHoursBefore !== null ? `~${formatHoursHuman(sentAtHoursBefore)} ` : ""}before the appointment (avoid duplicate).`
+                : `Skipped 24h reminder because it was already sent earlier${sentAt ? ` at ${sentAt}` : ""}.`,
               details: {
                 nowISO,
                 appointmentDateTime: appointment.dateTime,
                 hoursUntil,
                 existingReminder: {
                   _id: existingReminder._id,
-                  sentAt: (existingReminder as any).sentAt,
-                  source: (existingReminder as any).source ?? null,
+                  sentAt,
+                  source,
                   targetDate: (existingReminder as any).targetDate,
+                  sentAtHoursBeforeAppointment: sentAtHoursBefore,
                 },
               },
               dedupMinutes: 240,
@@ -507,23 +542,35 @@ export const checkAndSendReminders = internalAction({
           );
 
           if (existingReminder) {
+            const source = (existingReminder as any).source ?? null;
+            const sentAt = (existingReminder as any).sentAt as string | undefined;
+            const sentAtHoursBefore =
+              sentAt && appointment.dateTime
+                ? hoursUntilAppointment(new Date(appointment.dateTime), new Date(sentAt))
+                : null;
+            const isBookingConfirmation = source === "booking_confirmation";
+
             await recordAttempt({
               appointmentId: appointment._id,
               patientId: appointment.patientId,
               reminderType: "1h",
               targetDate: appointment.dateTime,
               teamId: appointment.teamId,
-              status: "skipped_already_sent",
-              reasonCode: "ALREADY_SENT",
+              status: isBookingConfirmation ? "skipped_booking_confirmation" : "skipped_already_sent",
+              reasonCode: isBookingConfirmation ? "BOOKING_CONFIRMATION" : "ALREADY_SENT",
+              noteOverride: isBookingConfirmation
+                ? `Skipped 1h reminder because booking confirmation SMS was sent ${sentAtHoursBefore !== null ? `~${formatHoursHuman(sentAtHoursBefore)} ` : ""}before the appointment (avoid duplicate).`
+                : `Skipped 1h reminder because it was already sent earlier${sentAt ? ` at ${sentAt}` : ""}.`,
               details: {
                 nowISO,
                 appointmentDateTime: appointment.dateTime,
                 hoursUntil,
                 existingReminder: {
                   _id: existingReminder._id,
-                  sentAt: (existingReminder as any).sentAt,
-                  source: (existingReminder as any).source ?? null,
+                  sentAt,
+                  source,
                   targetDate: (existingReminder as any).targetDate,
+                  sentAtHoursBeforeAppointment: sentAtHoursBefore,
                 },
               },
               dedupMinutes: 120,
@@ -1164,25 +1211,87 @@ export const markReminderSentIfInWindow = mutation({
     const appointmentDate = new Date(args.appointmentDateTime);
     const hoursUntil = hoursUntilAppointment(appointmentDate, now);
 
-    // Check if appointment is within the 24h reminder window
-    if (isWithinWindow("24h", hoursUntil, REMINDER_WINDOWS_HOURS)) {
-      // Record as if we already sent the 24h reminder (since they got the confirmation)
+    const marked: { marked24h: boolean; marked1h: boolean } = {
+      marked24h: false,
+      marked1h: false,
+    };
+
+    const maybeInsertSuppression = async (reminderType: "24h" | "1h") => {
+      const existing = await ctx.db
+        .query("reminders")
+        .withIndex("by_appointment_type", (q) =>
+          q.eq("appointmentId", args.appointmentId).eq("reminderType", reminderType)
+        )
+        .first();
+      if (existing) return false;
+
       await ctx.db.insert("reminders", {
         appointmentId: args.appointmentId,
         patientId: args.patientId,
-        reminderType: "24h",
+        reminderType,
         targetDate: args.appointmentDateTime,
         sentAt: now.toISOString(),
         source: "booking_confirmation",
         teamId: args.teamId,
       });
-      console.log(
-        `Marked 24h reminder as sent for appointment ${args.appointmentId} (booked ${hoursUntil.toFixed(1)}h in advance)`
-      );
-      return { marked24h: true };
+
+      // Also record an audit trail entry immediately so admins don't have to wait for cron.
+      await ctx.db.insert("reminderAttempts", {
+        appointmentId: args.appointmentId,
+        patientId: args.patientId,
+        reminderType,
+        targetDate: args.appointmentDateTime,
+        attemptedAt: now.toISOString(),
+        status: "skipped_booking_confirmation",
+        reasonCode: "BOOKING_CONFIRMATION",
+        note:
+          reminderType === "24h"
+            ? `Skipped 24h reminder because booking confirmation SMS was sent at booking time (~${hoursUntil.toFixed(
+                2
+              )}h before appointment).`
+            : `Skipped 1h reminder because booking confirmation SMS was sent at booking time (~${hoursUntil.toFixed(
+                2
+              )}h before appointment).`,
+        detailsJson: JSON.stringify({
+          bookedAt: now.toISOString(),
+          appointmentDateTime: args.appointmentDateTime,
+          hoursUntilAtBooking: hoursUntil,
+          suppressionWindowHours:
+            reminderType === "24h"
+              ? [BOOKING_SUPPRESS_24H_START, BOOKING_SUPPRESS_24H_END]
+              : [BOOKING_SUPPRESS_1H_START, BOOKING_SUPPRESS_1H_END],
+        }),
+        teamId: args.teamId,
+      });
+
+      return true;
+    };
+
+    // Only suppress the 24h reminder if booking confirmation was sent within 24h–24h45m.
+    if (hoursUntil >= BOOKING_SUPPRESS_24H_START && hoursUntil <= BOOKING_SUPPRESS_24H_END) {
+      marked.marked24h = await maybeInsertSuppression("24h");
+      if (marked.marked24h) {
+        console.log(
+          `Suppressed 24h reminder for appointment ${args.appointmentId} (booking confirmation at ${hoursUntil.toFixed(
+            2
+          )}h before appointment)`
+        );
+      }
     }
 
-    return { marked24h: false };
+    // Only suppress the 1h reminder if booking confirmation was sent within 1h–1h45m.
+    if (hoursUntil >= BOOKING_SUPPRESS_1H_START && hoursUntil <= BOOKING_SUPPRESS_1H_END) {
+      marked.marked1h = await maybeInsertSuppression("1h");
+      if (marked.marked1h) {
+        console.log(
+          `Suppressed 1h reminder for appointment ${args.appointmentId} (booking confirmation at ${hoursUntil.toFixed(
+            2
+          )}h before appointment)`
+        );
+      }
+    }
+
+    return marked;
   },
 });
 
