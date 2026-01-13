@@ -54,8 +54,10 @@ const DEFAULT_QUIET_HOURS_END = 5; // 5am
 // Booking-confirmation suppression windows (in hours before appointment).
 // If the appointment is booked within these windows and the booking confirmation SMS succeeds,
 // we suppress the corresponding reminder to avoid double-texting.
-const BOOKING_SUPPRESS_24H_START = 24; // 24h
-const BOOKING_SUPPRESS_24H_END = 24.25; // 24h15m
+//
+// Keep the 24h suppression aligned to the 24h reminder send window (23h50m–24h10m).
+const BOOKING_SUPPRESS_24H_START = 1430 / 60; // 23h50m
+const BOOKING_SUPPRESS_24H_END = 1450 / 60; // 24h10m
 const BOOKING_SUPPRESS_1H_START = 1; // 1h
 const BOOKING_SUPPRESS_1H_END = 1.25; // 1h15m
 
