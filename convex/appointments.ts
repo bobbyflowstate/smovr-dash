@@ -42,7 +42,9 @@ export const get = query({
 
     return {
       appointments: appointmentsWithPatient,
-      teamName: team?.name || "Unknown Team"
+      teamName: team?.name || "Unknown Team",
+      teamTimezone: team?.timezone || null,
+      teamHospitalAddress: team?.hospitalAddress || null,
     };
   },
 });

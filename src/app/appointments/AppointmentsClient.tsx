@@ -18,6 +18,8 @@ interface AppointmentsClientProps {
 export default function AppointmentsClient({ userName, teamName }: AppointmentsClientProps) {
   const [appointments, setAppointments] = useState<any[] | null>(null);
   const [currentTeamName, setCurrentTeamName] = useState<string>(teamName);
+  const [teamTimezone, setTeamTimezone] = useState<string | null>(null);
+  const [teamHospitalAddress, setTeamHospitalAddress] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [cancelConfirmationId, setCancelConfirmationId] = useState<Id<"appointments"> | null>(null);
@@ -37,6 +39,8 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
         const data = await response.json();
         setAppointments(data.appointments);
         setCurrentTeamName(data.teamName);
+        setTeamTimezone(data.teamTimezone || null);
+        setTeamHospitalAddress(data.teamHospitalAddress || null);
       } catch (error) {
         console.error('Error fetching appointments:', error);
         setAppointments([]);
@@ -128,6 +132,37 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               Viewing appointments for: {currentTeamName}
             </p>
+            <div className="mt-3 grid gap-2">
+              <div className="flex items-start gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Team timezone:
+                </span>
+                <span className="text-sm text-gray-900 dark:text-gray-100">
+                  {teamTimezone ? (
+                    <>
+                      {getTimezoneDisplayName(teamTimezone)}{" "}
+                      <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                        ({teamTimezone})
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-gray-500 dark:text-gray-400">Not set</span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Address:
+                </span>
+                <span className="text-sm text-gray-900 dark:text-gray-100">
+                  {teamHospitalAddress ? (
+                    <span className="break-words">{teamHospitalAddress}</span>
+                  ) : (
+                    <span className="text-gray-500 dark:text-gray-400">Not set</span>
+                  )}
+                </span>
+              </div>
+            </div>
           </div>
           <Link 
             href="/submit" 
