@@ -422,6 +422,20 @@ export const checkAndSendReminders = internalAction({
                 : null;
             const sourceInfo = reminderSourceDisplay(source);
             const isBookingConfirmation = sourceInfo.sourceRaw === "booking_confirmation";
+            const isAutomatedCheck = sourceInfo.sourceRaw === "automated_check" || sourceInfo.sourceRaw === "cron";
+
+            // Avoid noisy "already sent" rows after a successful send.
+            // With minute-level checks, we'll see the appointment again until the window closes.
+            // If we've already recorded a "succeeded" attempt for this reminderType, don't add a redundant skip.
+            if (isAutomatedCheck) {
+              const latestAttempt = await ctx.runQuery(internal.reminders.getLatestReminderAttempt, {
+                appointmentId: appointment._id,
+                reminderType: "24h",
+              });
+              if (latestAttempt?.status === "succeeded") {
+                continue;
+              }
+            }
 
             await recordAttempt({
               appointmentId: appointment._id,
@@ -585,6 +599,18 @@ export const checkAndSendReminders = internalAction({
                 : null;
             const sourceInfo = reminderSourceDisplay(source);
             const isBookingConfirmation = sourceInfo.sourceRaw === "booking_confirmation";
+            const isAutomatedCheck = sourceInfo.sourceRaw === "automated_check" || sourceInfo.sourceRaw === "cron";
+
+            // Avoid noisy "already sent" rows after a successful send.
+            if (isAutomatedCheck) {
+              const latestAttempt = await ctx.runQuery(internal.reminders.getLatestReminderAttempt, {
+                appointmentId: appointment._id,
+                reminderType: "1h",
+              });
+              if (latestAttempt?.status === "succeeded") {
+                continue;
+              }
+            }
 
             await recordAttempt({
               appointmentId: appointment._id,
