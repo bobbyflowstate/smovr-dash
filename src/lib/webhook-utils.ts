@@ -19,7 +19,7 @@ export async function sendScheduleWebhook(
   patientId: Id<"patients">,
   phone: string,
   name: string | null
-): Promise<void> {
+): Promise<boolean> {
   try {
     // Get appointment and patient details
     const appointment = await convex.query(api.appointments.getById, {
@@ -28,7 +28,7 @@ export async function sendScheduleWebhook(
 
     if (!appointment) {
       console.error('Appointment not found for webhook:', appointmentId);
-      return;
+      return false;
     }
 
     const patient = await convex.query(api.patients.getById, {
@@ -54,10 +54,11 @@ export async function sendScheduleWebhook(
     );
     
     // Send SMS webhook
-    await sendSMSWebhook(phone, message);
+    return await sendSMSWebhook(phone, message);
   } catch (error) {
     console.error('Error preparing schedule webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment creation
+    return false;
   }
 }
 

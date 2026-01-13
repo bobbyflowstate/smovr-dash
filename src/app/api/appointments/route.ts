@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
 
     // 🔗 Send webhook if new appointment was created
     if (result.newAppointment && result.appointmentId && result.patientId) {
-      await sendScheduleWebhook(
+      const scheduleWebhookSent = await sendScheduleWebhook(
         convex,
         result.appointmentId as Id<"appointments">,
         result.patientId as Id<"patients">,
@@ -152,7 +152,9 @@ export async function POST(request: NextRequest) {
 
       // If booked within the 24h reminder window, mark the 24h reminder as "sent"
       // This prevents double-notification (confirmation + 24h reminder)
-      if (result.teamId) {
+      // IMPORTANT: Only do this if the schedule webhook actually succeeded.
+      // Otherwise we'd suppress the 24h reminder even though no SMS was delivered.
+      if (result.teamId && scheduleWebhookSent) {
         await convex.mutation(api.reminders.markReminderSentIfInWindow, {
           appointmentId: result.appointmentId as Id<"appointments">,
           patientId: result.patientId as Id<"patients">,

@@ -189,10 +189,12 @@ export const checkAndSendReminders = internalAction({
     console.log('Reminders cron: Starting check');
 
     // Check quiet hours first
+    // NOTE: Quiet hours are enforced as 10pm–5am in clinic timezone.
+    // We intentionally ignore SMS_QUIET_HOURS_START/END env vars here to avoid configuration drift.
     const quietStartStr = process.env.SMS_QUIET_HOURS_START;
     const quietEndStr = process.env.SMS_QUIET_HOURS_END;
-    const quietStart = quietStartStr ? parseInt(quietStartStr) : DEFAULT_QUIET_HOURS_START;
-    const quietEnd = quietEndStr ? parseInt(quietEndStr) : DEFAULT_QUIET_HOURS_END;
+    const quietStart = DEFAULT_QUIET_HOURS_START;
+    const quietEnd = DEFAULT_QUIET_HOURS_END;
     
     // We no longer early-return during quiet hours. Instead we still compute eligibility
     // and record a durable attempt per appointment/type with a clear "skipped_quiet_hours" reason.
@@ -202,9 +204,9 @@ export const checkAndSendReminders = internalAction({
     const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
 
     console.log(
-      `Reminders cron: timezone=${APPOINTMENT_TIMEZONE} currentHour=${currentHour} quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} inQuiet=${inQuietHours} (envSet=${Boolean(
+      `Reminders cron: timezone=${APPOINTMENT_TIMEZONE} currentHour=${currentHour} quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} inQuiet=${inQuietHours} (envProvided=${Boolean(
         quietStartStr && quietEndStr
-      )})`
+      )} provided=${quietStartStr || "unset"}-${quietEndStr || "unset"})`
     );
 
     if (!quietHoursValid) {
@@ -350,7 +352,7 @@ export const checkAndSendReminders = internalAction({
         if (isWithinWindow("24h", hoursUntil)) {
           // Check if 24h reminder already sent (includes bookings within the 24h window)
           const existingReminder = await ctx.runQuery(
-            internal.reminders.checkReminderSent,
+            internal.reminders.getReminderSentRecord,
             {
               appointmentId: appointment._id,
               reminderType: "24h",
@@ -366,7 +368,17 @@ export const checkAndSendReminders = internalAction({
               teamId: appointment.teamId,
               status: "skipped_already_sent",
               reasonCode: "ALREADY_SENT",
-              details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+              details: {
+                nowISO,
+                appointmentDateTime: appointment.dateTime,
+                hoursUntil,
+                existingReminder: {
+                  _id: existingReminder._id,
+                  sentAt: (existingReminder as any).sentAt,
+                  source: (existingReminder as any).source ?? null,
+                  targetDate: (existingReminder as any).targetDate,
+                },
+              },
               dedupMinutes: 240,
             });
           } else {
@@ -487,7 +499,7 @@ export const checkAndSendReminders = internalAction({
         if (isWithinWindow("1h", hoursUntil)) {
           // Check if 1h reminder already sent
           const existingReminder = await ctx.runQuery(
-            internal.reminders.checkReminderSent,
+            internal.reminders.getReminderSentRecord,
             {
               appointmentId: appointment._id,
               reminderType: "1h",
@@ -503,7 +515,17 @@ export const checkAndSendReminders = internalAction({
               teamId: appointment.teamId,
               status: "skipped_already_sent",
               reasonCode: "ALREADY_SENT",
-              details: { nowISO, appointmentDateTime: appointment.dateTime, hoursUntil },
+              details: {
+                nowISO,
+                appointmentDateTime: appointment.dateTime,
+                hoursUntil,
+                existingReminder: {
+                  _id: existingReminder._id,
+                  sentAt: (existingReminder as any).sentAt,
+                  source: (existingReminder as any).source ?? null,
+                  targetDate: (existingReminder as any).targetDate,
+                },
+              },
               dedupMinutes: 120,
             });
           } else {
@@ -743,7 +765,7 @@ export const testCheckReminders = internalAction({
             
             // Check if 24h reminder already sent (includes bookings within the 24h window)
             const existingReminder = await ctx.runQuery(
-              internal.reminders.checkReminderSent,
+              internal.reminders.getReminderSentRecord,
               {
                 appointmentId: appointment._id,
                 reminderType: "24h",
@@ -804,7 +826,7 @@ export const testCheckReminders = internalAction({
             console.log(`TEST: ⏰ Appointment ${appointment._id} is in 1h reminder window`);
             // Check if 1h reminder already sent
             const existingReminder = await ctx.runQuery(
-              internal.reminders.checkReminderSent,
+              internal.reminders.getReminderSentRecord,
               {
                 appointmentId: appointment._id,
                 reminderType: "1h",
@@ -953,6 +975,25 @@ export const checkReminderSent = internalQuery({
 });
 
 /**
+ * Query: Get the reminder record (if any) for appointment + type.
+ * Use this when you need to explain *why* a reminder was considered already sent.
+ */
+export const getReminderSentRecord = internalQuery({
+  args: {
+    appointmentId: v.id("appointments"),
+    reminderType: v.union(v.literal("24h"), v.literal("1h")),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("reminders")
+      .withIndex("by_appointment_type", (q) =>
+        q.eq("appointmentId", args.appointmentId).eq("reminderType", args.reminderType)
+      )
+      .first();
+  },
+});
+
+/**
  * Query: Get patient by ID
  */
 export const getPatientById = internalQuery({
@@ -1093,6 +1134,7 @@ export const recordReminderSent = internalMutation({
       reminderType: args.reminderType,
       targetDate: args.targetDate,
       sentAt: new Date().toISOString(),
+      source: "cron",
       teamId: args.teamId,
     });
   },
@@ -1106,7 +1148,7 @@ export const recordReminderSent = internalMutation({
  * - The cron would also try to send a 24h reminder (redundant)
  * 
  * By recording the 24h reminder as "sent" at booking time, the cron's
- * `checkReminderSent` query returns true and skips the reminder.
+ * `getReminderSentRecord` returns a record and skips the reminder.
  * 
  * Called from the appointments API after creating an appointment.
  */
@@ -1131,6 +1173,7 @@ export const markReminderSentIfInWindow = mutation({
         reminderType: "24h",
         targetDate: args.appointmentDateTime,
         sentAt: now.toISOString(),
+        source: "booking_confirmation",
         teamId: args.teamId,
       });
       console.log(
