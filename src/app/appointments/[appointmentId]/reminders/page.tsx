@@ -237,7 +237,7 @@ export default function ReminderAttemptsPage() {
         expectedBehavior = "In window now: should attempt on the next automated check.";
       } else if (windowPassed) {
         expectedBehavior =
-          "Window has passed: if nothing recorded, it was likely missed (system downtime or a logic mismatch).";
+          "This reminder window has ended. If no attempts are shown, the appointment was likely created after this window (or the reminder was intentionally skipped due to booking confirmation or quiet hours).";
       }
 
       if (!anyNonQuiet) {
