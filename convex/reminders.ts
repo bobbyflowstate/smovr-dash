@@ -390,7 +390,9 @@ export const checkAndSendReminders = internalAction({
         const teamIdStr = String(appointment.teamId);
         let team = teamCache.get(teamIdStr);
         if (!team) {
-          team = await ctx.db.get(appointment.teamId);
+          team = await ctx.runQuery(internal.reminders.getTeamById, {
+            teamId: appointment.teamId,
+          });
           teamCache.set(teamIdStr, team);
         }
         const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
@@ -774,35 +776,13 @@ export const testCheckReminders = internalAction({
       console.log('TEST: Manually triggering reminder check');
       console.log('═══════════════════════════════════════════════════════');
       
-      // Check quiet hours first
+      // Quiet hours are enforced as 10pm–5am in the team's timezone (per appointment).
+      // We do not skip the whole run; we evaluate quiet hours per appointment like production.
       const quietStartStr = process.env.SMS_QUIET_HOURS_START;
       const quietEndStr = process.env.SMS_QUIET_HOURS_END;
-      
-      console.log(`TEST: Quiet hours config - START: ${quietStartStr || 'not set'}, END: ${quietEndStr || 'not set'}`);
-      
-      if (quietStartStr && quietEndStr) {
-        const quietStart = parseInt(quietStartStr);
-        const quietEnd = parseInt(quietEndStr);
-        
-        if (!isNaN(quietStart) && !isNaN(quietEnd)) {
-          if (!validateQuietHours(quietStart, quietEnd)) {
-            // Invalid quiet hours config - don't send reminders
-            console.log('TEST: ⚠️ Invalid quiet hours configuration, skipping reminder check');
-            return { 
-              message: 'Skipped due to invalid quiet hours configuration', 
-              error: `Invalid quiet hours: start=${quietStart}, end=${quietEnd}. Must be between 0-23` 
-            };
-          } else {
-            const currentHour = getCurrentHourInTimezone(APPOINTMENT_TIMEZONE);
-            console.log(`TEST: Current hour in ${APPOINTMENT_TIMEZONE}: ${currentHour}`);
-            
-            if (isInQuietHours(currentHour, quietStart, quietEnd)) {
-              console.log(`TEST: ⚠️ Skipping - current hour ${currentHour} is in quiet hours (${quietStart}-${quietEnd})`);
-              return { message: 'Skipped due to quiet hours', currentHour, quietHours: `${quietStart}-${quietEnd}` };
-            }
-          }
-        }
-      }
+      console.log(
+        `TEST: Quiet hours env provided: ${quietStartStr || "unset"}-${quietEndStr || "unset"} (enforced=22-5, per-team timezone)`
+      );
 
       // Get current time
       const now = new Date();
@@ -835,12 +815,30 @@ export const testCheckReminders = internalAction({
       let remindersSent = { "24h": 0, "1h": 0 };
 
       // Process each appointment
+      const teamCache = new Map<string, any>();
       for (const appointment of allAppointments) {
         try {
           const appointmentDate = new Date(appointment.dateTime);
           const hoursUntil = hoursUntilAppointment(appointmentDate, now);
+          const teamIdStr = String(appointment.teamId);
+          let team = teamCache.get(teamIdStr);
+          if (!team) {
+            team = await ctx.runQuery(internal.reminders.getTeamById, {
+              teamId: appointment.teamId,
+            });
+            teamCache.set(teamIdStr, team);
+          }
+          const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
+          const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+
+          const currentHour = getCurrentHourInTimezone(timezone);
+          const inQuietHours = isInQuietHours(currentHour, DEFAULT_QUIET_HOURS_START, DEFAULT_QUIET_HOURS_END);
           
-          console.log(`TEST: Processing appointment ${appointment._id} - ${hoursUntil.toFixed(2)} hours until appointment`);
+          console.log(
+            `TEST: Processing appointment ${appointment._id} - ${hoursUntil.toFixed(
+              2
+            )}h until appointment (timezone=${timezone} currentHour=${currentHour} inQuiet=${inQuietHours})`
+          );
 
           // Check if appointment needs 24h reminder
           if (isWithinWindow("24h", hoursUntil)) {
@@ -856,6 +854,11 @@ export const testCheckReminders = internalAction({
             );
 
             if (!existingReminder) {
+              if (inQuietHours) {
+                console.log(
+                  `TEST: ⏭️ Skipping send due to quiet hours (22-5) in team timezone (${timezone})`
+                );
+              } else {
               // Get patient details
               const patient = await ctx.runQuery(internal.reminders.getPatientById, {
                 patientId: appointment.patientId,
@@ -863,15 +866,17 @@ export const testCheckReminders = internalAction({
 
               if (patient) {
                 console.log(`TEST: 📤 Sending 24h reminder for appointment ${appointment._id} to ${patient.phone}`);
-                const success = await sendReminder24hWebhook(
+                const result = await sendReminder24hWebhook(
                   appointment._id,
                   patient.name || null,
                   patient.phone,
-                  appointmentDate
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
                 );
 
                 // Only record reminder if it was sent successfully
-                if (success) {
+                if (result.ok) {
                   await ctx.runMutation(internal.reminders.recordReminderSent, {
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -887,6 +892,7 @@ export const testCheckReminders = internalAction({
                 }
               } else {
                 console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
+              }
               }
             } else {
               console.log(`TEST: ⏭️ 24h reminder already sent for appointment ${appointment._id}`);
@@ -917,6 +923,11 @@ export const testCheckReminders = internalAction({
             );
 
             if (!existingReminder) {
+              if (inQuietHours) {
+                console.log(
+                  `TEST: ⏭️ Skipping send due to quiet hours (22-5) in team timezone (${timezone})`
+                );
+              } else {
               // Get patient details
               const patient = await ctx.runQuery(internal.reminders.getPatientById, {
                 patientId: appointment.patientId,
@@ -924,15 +935,17 @@ export const testCheckReminders = internalAction({
 
               if (patient) {
                 console.log(`TEST: 📤 Sending 1h reminder for appointment ${appointment._id} to ${patient.phone}`);
-                const success = await sendReminder1hWebhook(
+                const result = await sendReminder1hWebhook(
                   appointment._id,
                   patient.name || null,
                   patient.phone,
-                  appointmentDate
+                  appointmentDate,
+                  timezone,
+                  hospitalAddress
                 );
 
                 // Only record reminder if it was sent successfully
-                if (success) {
+                if (result.ok) {
                   await ctx.runMutation(internal.reminders.recordReminderSent, {
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -948,6 +961,7 @@ export const testCheckReminders = internalAction({
                 }
               } else {
                 console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
+              }
               }
             } else {
               console.log(`TEST: ⏭️ 1h reminder already sent for appointment ${appointment._id}`);
@@ -1085,6 +1099,18 @@ export const getPatientById = internalQuery({
   },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.patientId);
+  },
+});
+
+/**
+ * Query: Get team by ID (used by reminder actions for timezone/address).
+ */
+export const getTeamById = internalQuery({
+  args: {
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.teamId);
   },
 });
 
