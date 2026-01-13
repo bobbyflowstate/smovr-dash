@@ -100,6 +100,18 @@ export function formatAppointmentDateTime(appointmentDate: Date, timezone: strin
   return { appointmentDateStr, appointmentTimeStr, appointmentDateTimeStr };
 }
 
+function getTimezoneLabelShort(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === "timeZoneName")?.value || timezone;
+  } catch {
+    return timezone;
+  }
+}
+
 /**
  * Unified webhook function that sends SMS message to GoHighLevel
  * Includes automatic retry with exponential backoff for transient failures.
@@ -248,6 +260,7 @@ export function formatScheduleMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
@@ -256,7 +269,7 @@ export function formatScheduleMessage(
   const greetingEs = patientName ? `Hola ${patientName}, su cita está confirmada.` : 'Su cita está confirmada.';
   
   return `${greetingEn}\n${greetingEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `Let us know if you are / Infórmenos si usted:\n\n` +
     `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
@@ -274,6 +287,7 @@ export function formatCancelMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   
   const msgEn = patientName 
     ? `Hi ${patientName}, your appointment has been canceled.`
@@ -283,7 +297,7 @@ export function formatCancelMessage(
     : 'Su cita ha sido cancelada.';
   
   return `${msgEn}\n${msgEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `If you need to reschedule, please contact us.\n` +
     `Si necesita reprogramar, por favor contáctenos.`;
@@ -335,6 +349,7 @@ export function formatReminder24hMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
@@ -369,7 +384,7 @@ export function formatReminder24hMessage(
   }
   
   return `${msgEn}\n${msgEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `Let us know if you are / Infórmenos si usted:\n\n` +
     `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
@@ -389,6 +404,7 @@ export function formatReminder1hMessage(
   hospitalAddress: string
 ): string {
   const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
+  const tzLabel = getTimezoneLabelShort(timezone);
   const url15 = `${baseUrl}/15-late/${appointmentId}`;
   const url30 = `${baseUrl}/30-late/${appointmentId}`;
   const urlReschedule = `${baseUrl}/reschedule-cancel/${appointmentId}`;
@@ -401,7 +417,7 @@ export function formatReminder1hMessage(
     : 'Un recordatorio rápido de que su cita es en aproximadamente 1 hora.';
   
   return `${msgEn}\n${msgEs}\n\n` +
-    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr}\n\n` +
+    `Date & Time / Fecha y hora:\n${appointmentDateStr} ${appointmentTimeStr} (${tzLabel})\n\n` +
     `Address / Dirección:\n${hospitalAddress}\n\n` +
     `Let us know if you are / Infórmenos si usted:\n\n` +
     `• 15 mins late / 15 minutos tarde:\n${url15}\n\n` +
