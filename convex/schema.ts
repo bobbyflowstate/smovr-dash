@@ -41,7 +41,7 @@ export default defineSchema({
     reminderType: v.string(), // "24h", "1h", "birthday", etc.
     targetDate: v.string(), // ISO date string for what the reminder is for
     sentAt: v.string(), // ISO timestamp when reminder was sent
-    source: v.optional(v.string()), // "cron" | "booking_confirmation" | etc.
+    source: v.optional(v.string()), // "automated_check" | "booking_confirmation" | etc.
     teamId: v.id("teams"),
   })
     .index("by_appointment_type", ["appointmentId", "reminderType"])

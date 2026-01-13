@@ -268,15 +268,16 @@ export const checkAndSendReminders = internalAction({
         return "Skipped because booking confirmation SMS already covered this reminder window.";
       if (status === "skipped_already_sent") return "Reminder not sent because it was already recorded as sent.";
       if (status === "failed_precondition") {
+        const itNote = " Please contact your IT department.";
         switch (reason) {
           case "INVALID_QUIET_HOURS":
-            return "Reminder not sent because quiet hours configuration is invalid.";
+            return `Reminder not sent because quiet hours configuration is invalid.${itNote}`;
           case "BASE_URL_NOT_CONFIGURED":
-            return "Reminder not sent because BASE_URL is not configured for Convex.";
+            return `Reminder not sent because BASE_URL is not configured for Convex.${itNote}`;
           case "PATIENT_NOT_FOUND":
-            return "Reminder not sent because patient record was not found.";
+            return `Reminder not sent because patient record was not found.${itNote}`;
           default:
-            return "Reminder not sent due to a configuration/precondition failure.";
+            return `Reminder not sent due to a configuration/precondition failure.${itNote}`;
         }
       }
       if (status === "failed_webhook") {
@@ -296,6 +297,15 @@ export const checkAndSendReminders = internalAction({
         }
       }
       return "Reminder not sent due to an unexpected processing error.";
+    };
+
+    const reminderSourceDisplay = (source: unknown): { sourceRaw: string | null; sourceDisplay: string | null } => {
+      const raw = typeof source === "string" ? source : null;
+      if (!raw) return { sourceRaw: null, sourceDisplay: null };
+      if (raw === "booking_confirmation") return { sourceRaw: raw, sourceDisplay: "Booking confirmation" };
+      if (raw === "cron" || raw === "automated_check")
+        return { sourceRaw: raw, sourceDisplay: "Automated reminder check" };
+      return { sourceRaw: raw, sourceDisplay: raw };
     };
 
     const formatHoursHuman = (hours: number): string => {
@@ -389,7 +399,8 @@ export const checkAndSendReminders = internalAction({
               sentAt && appointment.dateTime
                 ? hoursUntilAppointment(new Date(appointment.dateTime), new Date(sentAt))
                 : null;
-            const isBookingConfirmation = source === "booking_confirmation";
+            const sourceInfo = reminderSourceDisplay(source);
+            const isBookingConfirmation = sourceInfo.sourceRaw === "booking_confirmation";
 
             await recordAttempt({
               appointmentId: appointment._id,
@@ -409,7 +420,8 @@ export const checkAndSendReminders = internalAction({
                 existingReminder: {
                   _id: existingReminder._id,
                   sentAt,
-                  source,
+                  source: sourceInfo.sourceDisplay,
+                  sourceRaw: sourceInfo.sourceRaw,
                   targetDate: (existingReminder as any).targetDate,
                   sentAtHoursBeforeAppointment: sentAtHoursBefore,
                 },
@@ -548,7 +560,8 @@ export const checkAndSendReminders = internalAction({
               sentAt && appointment.dateTime
                 ? hoursUntilAppointment(new Date(appointment.dateTime), new Date(sentAt))
                 : null;
-            const isBookingConfirmation = source === "booking_confirmation";
+            const sourceInfo = reminderSourceDisplay(source);
+            const isBookingConfirmation = sourceInfo.sourceRaw === "booking_confirmation";
 
             await recordAttempt({
               appointmentId: appointment._id,
@@ -568,7 +581,8 @@ export const checkAndSendReminders = internalAction({
                 existingReminder: {
                   _id: existingReminder._id,
                   sentAt,
-                  source,
+                  source: sourceInfo.sourceDisplay,
+                  sourceRaw: sourceInfo.sourceRaw,
                   targetDate: (existingReminder as any).targetDate,
                   sentAtHoursBeforeAppointment: sentAtHoursBefore,
                 },
@@ -1181,7 +1195,7 @@ export const recordReminderSent = internalMutation({
       reminderType: args.reminderType,
       targetDate: args.targetDate,
       sentAt: new Date().toISOString(),
-      source: "cron",
+      source: "automated_check",
       teamId: args.teamId,
     });
   },

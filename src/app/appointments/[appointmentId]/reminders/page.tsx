@@ -76,7 +76,7 @@ function intervalHasNonQuietTime(args: {
   const endMs = args.end.getTime();
   if (!isFinite(startMs) || !isFinite(endMs) || endMs <= startMs) return false;
 
-  // Sample on 15-minute boundaries (cron cadence) + also check start/end.
+  // Sample on 15-minute boundaries (automated check cadence) + also check start/end.
   const stepMs = 15 * 60 * 1000;
   for (let t = startMs; t <= endMs; t += stepMs) {
     const d = new Date(t);
@@ -234,10 +234,10 @@ export default function ReminderAttemptsPage() {
       } else if (windowInFuture) {
         expectedBehavior = "Not attempted yet (window has not started).";
       } else if (inWindowNow) {
-        expectedBehavior = "In window now: should attempt on next cron run.";
+        expectedBehavior = "In window now: should attempt on the next automated check.";
       } else if (windowPassed) {
         expectedBehavior =
-          "Window has passed: if nothing recorded, it was likely missed (cron downtime or logic mismatch).";
+          "Window has passed: if nothing recorded, it was likely missed (system downtime or a logic mismatch).";
       }
 
       if (!anyNonQuiet) {
@@ -301,7 +301,7 @@ export default function ReminderAttemptsPage() {
                 Expected reminders
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Times shown in {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}. Cron checks about every 15 minutes.
+                Times shown in {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}. The system checks about every minute.
               </p>
               {appointment?.dateTime && (
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
