@@ -5,7 +5,7 @@ const crons = cronJobs();
 
 crons.cron(
   "reminders",
-  "*/15 * * * *", // Every 15 minutes (reduced frequency to save costs)
+  "* * * * *", // Every minute (reliability > cost; reduces missed windows)
   internal.reminders.checkAndSendReminders
 );
 
