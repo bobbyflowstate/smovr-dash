@@ -138,10 +138,20 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
     }
   };
 
+  const cancelledTint =
+    view === "cancelled"
+      ? "bg-red-50/70 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+      : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700";
+
+  const cancelledSubtleTint =
+    view === "cancelled"
+      ? "bg-red-50/50 dark:bg-red-900/10"
+      : "bg-gray-50 dark:bg-gray-700/50";
+
   return (
     <div ref={pageRef} className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors">
+      <div className={`${cancelledTint} rounded-xl shadow-sm border p-6 transition-colors`}>
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -218,7 +228,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       </div>
 
       {/* Search */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors">
+      <div className={`${cancelledTint} rounded-xl shadow-sm border p-6 transition-colors`}>
         <input
           type="text"
                   placeholder="Search by phone number..."
@@ -230,7 +240,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
 
       {/* Loading State */}
       {isLoading && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center transition-colors">
+        <div className={`${cancelledTint} rounded-xl shadow-sm border p-8 text-center transition-colors`}>
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-400">Loading appointments...</p>
         </div>
@@ -239,8 +249,8 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       {/* Appointments */}
       {groupedAppointments && Object.keys(groupedAppointments).length > 0 ? (
         Object.entries(groupedAppointments).map(([date, appointmentsForDay]) => (
-          <div key={date} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-colors overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div key={date} className={`${cancelledTint} rounded-xl shadow-sm border transition-colors overflow-hidden`}>
+            <div className={`px-6 py-4 border-b ${view === "cancelled" ? "border-red-200 dark:border-red-800" : "border-gray-200 dark:border-gray-700"}`}>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{date}</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Times shown in {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}
@@ -250,7 +260,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
             {/* Desktop Table View */}
             <div className="hidden md:block">
               <table className="min-w-full">
-                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                <thead className={cancelledSubtleTint}>
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient Name</th>
@@ -304,7 +314,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
             {/* Mobile Card View */}
             <div className="md:hidden p-4 space-y-4">
               {(appointmentsForDay as any[]).map((appointment: any) => (
-                <div key={appointment._id} className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg transition-colors">
+                <div key={appointment._id} className={`${cancelledSubtleTint} p-4 rounded-lg transition-colors`}>
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">{appointment.patient?.name || 'N/A'}</p>
@@ -342,8 +352,14 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
         ))
       ) : (
         appointments && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center transition-colors">
-            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className={`${cancelledTint} rounded-xl shadow-sm border p-8 text-center transition-colors`}>
+            <div
+              className={`w-16 h-16 ${
+                view === "cancelled"
+                  ? "bg-red-100/70 dark:bg-red-900/30"
+                  : "bg-gray-100 dark:bg-gray-700"
+              } rounded-full flex items-center justify-center mx-auto mb-4`}
+            >
               <svg className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
