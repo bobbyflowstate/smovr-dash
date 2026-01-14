@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getEligibleReminderRangesISO } from "./reminder_logic";
 import type { Id } from "./_generated/dataModel";
@@ -34,16 +34,6 @@ async function postSlackWebhook(webhookUrl: string, text: string): Promise<void>
   }
 }
 
-export const listEnabledAlertSubscriptions = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db
-      .query("alertSubscriptions")
-      .withIndex("by_enabled", (q) => q.eq("enabled", true))
-      .collect();
-  },
-});
-
 /**
  * Send a Slack test message to all enabled Slack subscriptions.
  * This is the quickest way to validate your Slack webhook + DB wiring.
@@ -53,7 +43,7 @@ export const sendTestSlackAlert = internalAction({
     text: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const subscriptions = await ctx.runQuery(internal.alerts.listEnabledAlertSubscriptions, {});
+    const subscriptions = await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {});
     const slackSubs = subscriptions.filter((s) => s.destinationType === "slack");
     const text =
       args.text ??
@@ -88,114 +78,6 @@ export const sendTestSlackAlert = internalAction({
   },
 });
 
-export const getAlertDedupeByKey = internalQuery({
-  args: { key: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("alertDedupe")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .first();
-  },
-});
-
-export const upsertAlertDedupe = internalMutation({
-  args: {
-    key: v.string(),
-    lastSentAt: v.string(),
-    lastSeverity: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("alertDedupe")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        lastSentAt: args.lastSentAt,
-        lastSeverity: args.lastSeverity,
-      });
-      return existing._id;
-    }
-    return await ctx.db.insert("alertDedupe", {
-      key: args.key,
-      lastSentAt: args.lastSentAt,
-      lastSeverity: args.lastSeverity,
-    });
-  },
-});
-
-export const clearAlertDedupe = internalMutation({
-  args: { key: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    if (args.key) {
-      const existing = await ctx.db
-        .query("alertDedupe")
-        .withIndex("by_key", (q) => q.eq("key", args.key!))
-        .collect();
-      for (const row of existing) {
-        await ctx.db.delete(row._id);
-      }
-      return { deleted: existing.length };
-    }
-
-    // Best-effort: clear all dedupe state (useful for testing).
-    const all = await ctx.db.query("alertDedupe").collect();
-    for (const row of all) {
-      await ctx.db.delete(row._id);
-    }
-    return { deleted: all.length };
-  },
-});
-
-export const getReminderAttemptsByStatusSince = internalQuery({
-  args: { status: v.string(), startISO: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("reminderAttempts")
-      .withIndex("by_status_attemptedAt", (q) =>
-        q.eq("status", args.status).gte("attemptedAt", args.startISO)
-      )
-      .collect();
-  },
-});
-
-export const getReminderAttemptsSince = internalQuery({
-  args: { startISO: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("reminderAttempts")
-      .withIndex("by_attemptedAt", (q) => q.gte("attemptedAt", args.startISO))
-      .collect();
-  },
-});
-
-export const getCancelledAppointmentsInWindow = internalQuery({
-  args: { startISO: v.string(), endISO: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("appointments")
-      .withIndex("by_cancelledAt", (q) =>
-        q.gte("cancelledAt", args.startISO).lt("cancelledAt", args.endISO)
-      )
-      .filter((q) => q.eq(q.field("status"), "cancelled"))
-      .collect();
-  },
-});
-
-export const getLatestAttemptForAppointmentReminderType = internalQuery({
-  args: { appointmentId: v.id("appointments"), reminderType: v.string() },
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("reminderAttempts")
-      .withIndex("by_appointment_type", (q) =>
-        q.eq("appointmentId", args.appointmentId).eq("reminderType", args.reminderType)
-      )
-      .order("desc")
-      .take(1);
-    return rows[0] ?? null;
-  },
-});
-
 /**
  * Scheduled monitor:
  * - Computes high-signal metrics from durable DB state (`reminderAttempts`)
@@ -226,7 +108,7 @@ export const monitorAndAlert = internalAction({
       cancelledSmsMissingCritical: 3,
     } as const;
 
-    const subscriptions = await ctx.runQuery(internal.alerts.listEnabledAlertSubscriptions, {});
+    const subscriptions = await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {});
 
     const implicitGlobalSlack = process.env.ALERT_SLACK_WEBHOOK_URL;
     const implicitSeverity = parseSeverity(process.env.ALERT_SLACK_MIN_SEVERITY) ?? "warn";
@@ -264,7 +146,7 @@ export const monitorAndAlert = internalAction({
       severity: AlertSeverity;
       suppressMinutes: number;
     }): Promise<boolean> => {
-      const dedupe = await ctx.runQuery(internal.alerts.getAlertDedupeByKey, { key: args.key });
+      const dedupe = await ctx.runQuery(internal.alerts_db.getAlertDedupeByKey, { key: args.key });
       if (!dedupe) return true;
       const lastSeverity = parseSeverity(dedupe.lastSeverity) ?? "warn";
       if (severityRank(args.severity) > severityRank(lastSeverity)) return true; // escalation
@@ -274,7 +156,7 @@ export const monitorAndAlert = internalAction({
     };
 
     const recordSent = async (args: { key: string; severity: AlertSeverity }) => {
-      await ctx.runMutation(internal.alerts.upsertAlertDedupe, {
+      await ctx.runMutation(internal.alerts_db.upsertAlertDedupe, {
         key: args.key,
         lastSentAt: nowISO,
         lastSeverity: args.severity,
@@ -315,7 +197,7 @@ export const monitorAndAlert = internalAction({
     };
 
     // 1) Webhook failure spike
-    const failedWebhookAttempts = await ctx.runQuery(internal.alerts.getReminderAttemptsByStatusSince, {
+    const failedWebhookAttempts = await ctx.runQuery(internal.alerts_db.getReminderAttemptsByStatusSince, {
       status: "failed_webhook",
       startISO: windowStartISO,
     });
@@ -336,7 +218,7 @@ export const monitorAndAlert = internalAction({
     }
 
     // 2) Precondition/config failures
-    const failedPreconditionAttempts = await ctx.runQuery(internal.alerts.getReminderAttemptsByStatusSince, {
+    const failedPreconditionAttempts = await ctx.runQuery(internal.alerts_db.getReminderAttemptsByStatusSince, {
       status: "failed_precondition",
       startISO: windowStartISO,
     });
@@ -379,7 +261,7 @@ export const monitorAndAlert = internalAction({
       }),
     ]);
 
-    const recentAttempts = await ctx.runQuery(internal.alerts.getReminderAttemptsSince, {
+    const recentAttempts = await ctx.runQuery(internal.alerts_db.getReminderAttemptsSince, {
       startISO: graceStartISO,
     });
     const recentKey = new Set<string>();
@@ -421,7 +303,7 @@ export const monitorAndAlert = internalAction({
     // 4) Cancellation SMS missing (best-effort)
     const cancelledStartISO = windowStartISO;
     const cancelledEndISO = nowISO;
-    const cancelled = await ctx.runQuery(internal.alerts.getCancelledAppointmentsInWindow, {
+    const cancelled = await ctx.runQuery(internal.alerts_db.getCancelledAppointmentsInWindow, {
       startISO: cancelledStartISO,
       endISO: cancelledEndISO,
     });
@@ -429,7 +311,7 @@ export const monitorAndAlert = internalAction({
     let cancelledMissingTotal = 0;
     for (const appt of cancelled) {
       if (!appt.cancelledAt) continue;
-      const latest = await ctx.runQuery(internal.alerts.getLatestAttemptForAppointmentReminderType, {
+      const latest = await ctx.runQuery(internal.alerts_db.getLatestAttemptForAppointmentReminderType, {
         appointmentId: appt._id,
         reminderType: "cancellation",
       });
