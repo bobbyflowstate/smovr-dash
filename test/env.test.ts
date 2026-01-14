@@ -35,6 +35,17 @@ describe("convex/env", () => {
     expect(getCurrentEnvironment()).toBe(Environments.PROD);
   });
 
+  it("infers from CONVEX_DEPLOYMENT prefix when CONVEX_ENV is unset", () => {
+    setEnv({ CONVEX_ENV: undefined, CONVEX_DEPLOYMENT: "dev:amiable-crocodile-286" });
+    expect(getCurrentEnvironment()).toBe(Environments.DEV);
+
+    setEnv({ CONVEX_ENV: undefined, CONVEX_DEPLOYMENT: "prod:smovr-dash" });
+    expect(getCurrentEnvironment()).toBe(Environments.PROD);
+
+    setEnv({ CONVEX_ENV: undefined, CONVEX_DEPLOYMENT: "local:whatever" });
+    expect(getCurrentEnvironment()).toBe(Environments.LOCAL);
+  });
+
   it("maps common values to known environments", () => {
     setEnv({ CONVEX_ENV: "production" });
     expect(getCurrentEnvironment()).toBe(Environments.PROD);
@@ -50,6 +61,11 @@ describe("convex/env", () => {
 
     setEnv({ CONVEX_ENV: "local" });
     expect(getCurrentEnvironment()).toBe(Environments.LOCAL);
+  });
+
+  it("treats NODE_ENV=production as unknown in Convex contexts", () => {
+    setEnv({ CONVEX_ENV: undefined, CONVEX_DEPLOYMENT: undefined, VERCEL_ENV: undefined, NODE_ENV: "production" });
+    expect(getCurrentEnvironment()).toBe(Environments.UNKNOWN);
   });
 
   it("returns unknown for unrecognized env values", () => {
