@@ -6,6 +6,44 @@ import type { Id } from "./_generated/dataModel";
 
 type AlertSeverity = "warn" | "critical";
 
+type AlertSubscriptionRow = {
+  _id: Id<"alertSubscriptions">;
+  teamId?: Id<"teams">;
+  destinationType: string;
+  destination: string;
+  severity: string;
+  enabled: boolean;
+  createdAt: string;
+};
+
+type AlertDedupeRow = {
+  key: string;
+  lastSentAt: string;
+  lastSeverity: string;
+};
+
+type ReminderAttemptRow = {
+  appointmentId: Id<"appointments">;
+  patientId: Id<"patients">;
+  reminderType: string;
+  targetDate: string;
+  attemptedAt: string;
+  status: string;
+  reasonCode: string;
+  note: string;
+  detailsJson?: string;
+  teamId: Id<"teams">;
+};
+
+type AppointmentRow = {
+  _id: Id<"appointments">;
+  patientId: Id<"patients">;
+  dateTime: string;
+  teamId: Id<"teams">;
+  status?: string;
+  cancelledAt?: string;
+};
+
 function severityRank(s: AlertSeverity): number {
   return s === "critical" ? 2 : 1;
 }
@@ -38,19 +76,32 @@ async function postSlackWebhook(webhookUrl: string, text: string): Promise<void>
  * Send a Slack test message to all enabled Slack subscriptions.
  * This is the quickest way to validate your Slack webhook + DB wiring.
  */
-export const sendTestSlackAlert = internalAction({
+export const sendTestSlackAlert: any = internalAction({
   args: {
     text: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const subscriptions = await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {});
-    const slackSubs = subscriptions.filter((s) => s.destinationType === "slack");
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    attempted: number;
+    delivered: number;
+    failed: number;
+    results: Array<
+      | { subscriptionId: string; ok: true; teamId: Id<"teams"> | null }
+      | { subscriptionId: string; ok: false; teamId: Id<"teams"> | null; error: string }
+    >;
+    note: string;
+  }> => {
+    const subscriptions =
+      (await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {})) as AlertSubscriptionRow[];
+    const slackSubs = subscriptions.filter((s: AlertSubscriptionRow) => s.destinationType === "slack");
     const text =
       args.text ??
       `Alerting test from Convex (${new Date().toISOString()}). If you see this, alertSubscriptions -> Slack delivery works.`;
 
     const results = await Promise.all(
-      slackSubs.map(async (s) => {
+      slackSubs.map(async (s: AlertSubscriptionRow) => {
         try {
           await postSlackWebhook(s.destination, text);
           return { subscriptionId: String(s._id), ok: true as const, teamId: s.teamId ?? null };
@@ -79,13 +130,31 @@ export const sendTestSlackAlert = internalAction({
 });
 
 /**
+ * Clear alert dedupe state (so you can re-trigger alerts during manual testing).
+ */
+export const clearAlertDedupe: any = internalAction({
+  args: { key: v.optional(v.string()) },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    deleted: number;
+  }> => {
+    const res = (await ctx.runMutation(internal.alerts_db.clearAlertDedupe, {
+      key: args.key,
+    })) as { deleted: number };
+    return res;
+  },
+});
+
+/**
  * Scheduled monitor:
  * - Computes high-signal metrics from durable DB state (`reminderAttempts`)
  * - Sends Slack notifications (email later)
  * - Dedupes alerts to avoid paging every minute
  */
-export const monitorAndAlert = internalAction({
-  handler: async (ctx) => {
+export const monitorAndAlert: any = internalAction({
+  handler: async (ctx): Promise<void> => {
     const now = new Date();
     const nowISO = now.toISOString();
 
@@ -108,14 +177,15 @@ export const monitorAndAlert = internalAction({
       cancelledSmsMissingCritical: 3,
     } as const;
 
-    const subscriptions = await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {});
+    const subscriptions =
+      (await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {})) as AlertSubscriptionRow[];
 
     const implicitGlobalSlack = process.env.ALERT_SLACK_WEBHOOK_URL;
     const implicitSeverity = parseSeverity(process.env.ALERT_SLACK_MIN_SEVERITY) ?? "warn";
 
     type Recipient = { destinationType: string; destination: string; severity: AlertSeverity; teamId: Id<"teams"> | null };
     const allRecipients: Recipient[] = [
-      ...subscriptions.map((s) => ({
+      ...subscriptions.map((s: AlertSubscriptionRow) => ({
         destinationType: s.destinationType,
         destination: s.destination,
         severity: parseSeverity(s.severity) ?? "warn",
@@ -146,7 +216,9 @@ export const monitorAndAlert = internalAction({
       severity: AlertSeverity;
       suppressMinutes: number;
     }): Promise<boolean> => {
-      const dedupe = await ctx.runQuery(internal.alerts_db.getAlertDedupeByKey, { key: args.key });
+      const dedupe = (await ctx.runQuery(internal.alerts_db.getAlertDedupeByKey, {
+        key: args.key,
+      })) as AlertDedupeRow | null;
       if (!dedupe) return true;
       const lastSeverity = parseSeverity(dedupe.lastSeverity) ?? "warn";
       if (severityRank(args.severity) > severityRank(lastSeverity)) return true; // escalation
@@ -197,10 +269,10 @@ export const monitorAndAlert = internalAction({
     };
 
     // 1) Webhook failure spike
-    const failedWebhookAttempts = await ctx.runQuery(internal.alerts_db.getReminderAttemptsByStatusSince, {
+    const failedWebhookAttempts = (await ctx.runQuery(internal.alerts_db.getReminderAttemptsByStatusSince, {
       status: "failed_webhook",
       startISO: windowStartISO,
-    });
+    })) as ReminderAttemptRow[];
     const failedWebhookCount = failedWebhookAttempts.length;
     if (failedWebhookCount >= THRESHOLDS.failedWebhookWarn) {
       const severity: AlertSeverity =
@@ -218,10 +290,10 @@ export const monitorAndAlert = internalAction({
     }
 
     // 2) Precondition/config failures
-    const failedPreconditionAttempts = await ctx.runQuery(internal.alerts_db.getReminderAttemptsByStatusSince, {
+    const failedPreconditionAttempts = (await ctx.runQuery(internal.alerts_db.getReminderAttemptsByStatusSince, {
       status: "failed_precondition",
       startISO: windowStartISO,
-    });
+    })) as ReminderAttemptRow[];
     const failedPreconditionCount = failedPreconditionAttempts.length;
     if (failedPreconditionCount >= THRESHOLDS.failedPreconditionWarn) {
       const severity: AlertSeverity =
@@ -260,10 +332,12 @@ export const monitorAndAlert = internalAction({
         endISO: ranges["24h"].endISO,
       }),
     ]);
+    const appts1hTyped = appts1h as AppointmentRow[];
+    const appts24hTyped = appts24h as AppointmentRow[];
 
-    const recentAttempts = await ctx.runQuery(internal.alerts_db.getReminderAttemptsSince, {
+    const recentAttempts = (await ctx.runQuery(internal.alerts_db.getReminderAttemptsSince, {
       startISO: graceStartISO,
-    });
+    })) as ReminderAttemptRow[];
     const recentKey = new Set<string>();
     for (const a of recentAttempts) {
       // Only count the reminder windows we expect the cron to record.
@@ -273,8 +347,16 @@ export const monitorAndAlert = internalAction({
 
     type Expected = { appointmentId: Id<"appointments">; teamId: Id<"teams">; reminderType: "1h" | "24h" };
     const expected: Expected[] = [
-      ...appts1h.map((a) => ({ appointmentId: a._id, teamId: a.teamId, reminderType: "1h" as const })),
-      ...appts24h.map((a) => ({ appointmentId: a._id, teamId: a.teamId, reminderType: "24h" as const })),
+      ...appts1hTyped.map((a: AppointmentRow) => ({
+        appointmentId: a._id,
+        teamId: a.teamId,
+        reminderType: "1h" as const,
+      })),
+      ...appts24hTyped.map((a: AppointmentRow) => ({
+        appointmentId: a._id,
+        teamId: a.teamId,
+        reminderType: "24h" as const,
+      })),
     ];
 
     let missingTotal = 0;
@@ -303,18 +385,18 @@ export const monitorAndAlert = internalAction({
     // 4) Cancellation SMS missing (best-effort)
     const cancelledStartISO = windowStartISO;
     const cancelledEndISO = nowISO;
-    const cancelled = await ctx.runQuery(internal.alerts_db.getCancelledAppointmentsInWindow, {
+    const cancelled = (await ctx.runQuery(internal.alerts_db.getCancelledAppointmentsInWindow, {
       startISO: cancelledStartISO,
       endISO: cancelledEndISO,
-    });
+    })) as AppointmentRow[];
 
     let cancelledMissingTotal = 0;
     for (const appt of cancelled) {
       if (!appt.cancelledAt) continue;
-      const latest = await ctx.runQuery(internal.alerts_db.getLatestAttemptForAppointmentReminderType, {
+      const latest = (await ctx.runQuery(internal.alerts_db.getLatestAttemptForAppointmentReminderType, {
         appointmentId: appt._id,
         reminderType: "cancellation",
-      });
+      })) as ReminderAttemptRow | null;
       if (!latest) {
         cancelledMissingTotal++;
         continue;
