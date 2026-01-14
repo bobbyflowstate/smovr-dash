@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { getEligibleReminderRangesISO } from "./reminder_logic";
 import type { Id } from "./_generated/dataModel";
 
@@ -76,7 +75,7 @@ async function postSlackWebhook(webhookUrl: string, text: string): Promise<void>
  * Send a Slack test message to all enabled Slack subscriptions.
  * This is the quickest way to validate your Slack webhook + DB wiring.
  */
-export const sendTestSlackAlert: any = internalAction({
+export const sendTestSlackAlert = internalAction({
   args: {
     text: v.optional(v.string()),
   },
@@ -93,6 +92,9 @@ export const sendTestSlackAlert: any = internalAction({
     >;
     note: string;
   }> => {
+    // Avoid importing generated `internal` API at module scope to prevent
+    // circular type inference during `npx convex dev` typechecking.
+    const { internal } = (await import("./_generated/api")) as any;
     const subscriptions =
       (await ctx.runQuery(internal.alerts_db.listEnabledAlertSubscriptions, {})) as AlertSubscriptionRow[];
     const slackSubs = subscriptions.filter((s: AlertSubscriptionRow) => s.destinationType === "slack");
@@ -140,6 +142,7 @@ export const clearAlertDedupe: any = internalAction({
   ): Promise<{
     deleted: number;
   }> => {
+    const { internal } = (await import("./_generated/api")) as any;
     const res = (await ctx.runMutation(internal.alerts_db.clearAlertDedupe, {
       key: args.key,
     })) as { deleted: number };
@@ -153,8 +156,9 @@ export const clearAlertDedupe: any = internalAction({
  * - Sends Slack notifications (email later)
  * - Dedupes alerts to avoid paging every minute
  */
-export const monitorAndAlert: any = internalAction({
+export const monitorAndAlert = internalAction({
   handler: async (ctx): Promise<void> => {
+    const { internal } = (await import("./_generated/api")) as any;
     const now = new Date();
     const nowISO = now.toISOString();
 
