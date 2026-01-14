@@ -38,7 +38,9 @@ export default defineSchema({
     teamId: v.id("teams"),
   })
     .index("by_team", ["teamId"])
-    .index("by_dateTime", ["dateTime"]),
+    .index("by_dateTime", ["dateTime"])
+    // Optional field index: cancelled appointments will have cancelledAt set.
+    .index("by_cancelledAt", ["cancelledAt"]),
 
   reminders: defineTable({
     appointmentId: v.optional(v.id("appointments")), // null for patient reminders like birthdays
@@ -67,7 +69,11 @@ export default defineSchema({
   })
     .index("by_appointment_type", ["appointmentId", "reminderType"])
     .index("by_team", ["teamId"])
-    .index("by_team_appointment", ["teamId", "appointmentId"]),
+    .index("by_team_appointment", ["teamId", "appointmentId"])
+    // Monitoring-friendly indexes (rolling window queries).
+    .index("by_attemptedAt", ["attemptedAt"])
+    .index("by_status_attemptedAt", ["status", "attemptedAt"])
+    .index("by_team_status_attemptedAt", ["teamId", "status", "attemptedAt"]),
 
   logs: defineTable({
     appointmentId: v.id("appointments"),
@@ -80,4 +86,31 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_appointment", ["appointmentId"])
     .index("by_appointment_action", ["appointmentId", "action"]),
+
+  /**
+   * Internal-only alerting configuration.
+   *
+   * Destinations can be sensitive (Slack webhook URLs, emails), so this table
+   * should never be exposed directly to clients.
+   */
+  alertSubscriptions: defineTable({
+    teamId: v.optional(v.id("teams")), // null/undefined => global ops
+    destinationType: v.string(), // "slack" | "email"
+    destination: v.string(), // Slack incoming webhook URL or email address
+    severity: v.string(), // "warn" | "critical"
+    enabled: v.boolean(),
+    createdAt: v.string(), // ISO timestamp
+  })
+    .index("by_enabled", ["enabled"])
+    .index("by_team_enabled", ["teamId", "enabled"]),
+
+  /**
+   * Alert dedupe state so we don't send the same alert every minute.
+   * Key format is owned by the monitor job (e.g. "global:failed_webhook:warn").
+   */
+  alertDedupe: defineTable({
+    key: v.string(),
+    lastSentAt: v.string(), // ISO timestamp
+    lastSeverity: v.string(), // "warn" | "critical"
+  }).index("by_key", ["key"]),
 });

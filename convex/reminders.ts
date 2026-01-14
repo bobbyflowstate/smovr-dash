@@ -9,7 +9,7 @@ import {
   hoursUntil as hoursUntilAppointment,
   isWithinWindow,
 } from "./reminder_logic";
-import { assertDevEnvironment } from "./env";
+import { isDevEnvironment } from "./env";
 import {
   BOOKING_SUPPRESS_1H_END,
   BOOKING_SUPPRESS_1H_START,
@@ -1413,7 +1413,17 @@ export const seedRemindersTestData = internalMutation({
     note: string;
   }> => {
     // Safety: seeding is for local/dev only.
-    assertDevEnvironment("seedRemindersTestData");
+    //
+    // In Convex Cloud, NODE_ENV may be "production" even for Development deployments,
+    // so environment detection can be ambiguous. To keep this safe and still usable:
+    // - allow if our environment detector says dev/local
+    // - OR allow if an explicit flag is set on the deployment.
+    const explicitlyAllowed = process.env.ALLOW_DEV_SEEDING === "true";
+    if (!isDevEnvironment() && !explicitlyAllowed) {
+      throw new Error(
+        'seedRemindersTestData is disabled for this deployment. Set env var ALLOW_DEV_SEEDING="true" on your Dev deployment to enable it.'
+      );
+    }
 
     const count1h = args.count1h ?? 2;
     const count24h = args.count24h ?? 2;

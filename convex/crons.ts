@@ -9,5 +9,11 @@ crons.cron(
   internal.reminders.checkAndSendReminders
 );
 
+crons.cron(
+  "alerts_monitor",
+  "* * * * *", // Every minute (cheap rolling-window checks + fast detection)
+  internal.alerts.monitorAndAlert
+);
+
 export default crons;
 
