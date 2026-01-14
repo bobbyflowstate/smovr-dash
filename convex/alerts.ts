@@ -44,6 +44,50 @@ export const listEnabledAlertSubscriptions = internalQuery({
   },
 });
 
+/**
+ * Send a Slack test message to all enabled Slack subscriptions.
+ * This is the quickest way to validate your Slack webhook + DB wiring.
+ */
+export const sendTestSlackAlert = internalAction({
+  args: {
+    text: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const subscriptions = await ctx.runQuery(internal.alerts.listEnabledAlertSubscriptions, {});
+    const slackSubs = subscriptions.filter((s) => s.destinationType === "slack");
+    const text =
+      args.text ??
+      `Alerting test from Convex (${new Date().toISOString()}). If you see this, alertSubscriptions -> Slack delivery works.`;
+
+    const results = await Promise.all(
+      slackSubs.map(async (s) => {
+        try {
+          await postSlackWebhook(s.destination, text);
+          return { subscriptionId: String(s._id), ok: true as const, teamId: s.teamId ?? null };
+        } catch (e) {
+          return {
+            subscriptionId: String(s._id),
+            ok: false as const,
+            teamId: s.teamId ?? null,
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }
+      })
+    );
+
+    return {
+      attempted: slackSubs.length,
+      delivered: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+      note:
+        slackSubs.length === 0
+          ? 'No enabled Slack subscriptions found. Ensure alertSubscriptions has enabled=true and destinationType="slack".'
+          : "Done.",
+    };
+  },
+});
+
 export const getAlertDedupeByKey = internalQuery({
   args: { key: v.string() },
   handler: async (ctx, args) => {
@@ -77,6 +121,29 @@ export const upsertAlertDedupe = internalMutation({
       lastSentAt: args.lastSentAt,
       lastSeverity: args.lastSeverity,
     });
+  },
+});
+
+export const clearAlertDedupe = internalMutation({
+  args: { key: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    if (args.key) {
+      const existing = await ctx.db
+        .query("alertDedupe")
+        .withIndex("by_key", (q) => q.eq("key", args.key!))
+        .collect();
+      for (const row of existing) {
+        await ctx.db.delete(row._id);
+      }
+      return { deleted: existing.length };
+    }
+
+    // Best-effort: clear all dedupe state (useful for testing).
+    const all = await ctx.db.query("alertDedupe").collect();
+    for (const row of all) {
+      await ctx.db.delete(row._id);
+    }
+    return { deleted: all.length };
   },
 });
 
