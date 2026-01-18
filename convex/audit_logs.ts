@@ -1,8 +1,19 @@
+/**
+ * Audit Logs
+ *
+ * These are patient action logs - recording when patients respond to
+ * appointment notifications (e.g., "I'm running 15 minutes late").
+ *
+ * Note: The underlying Convex table is named "logs" for backward compatibility.
+ * This file provides the audit log functionality.
+ */
+
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { createMutationLogger, createQueryLogger } from "./lib/logger";
 
-// Create a log entry (prevents duplicates)
-export const createLog = mutation({
+// Create an audit log entry (prevents duplicates)
+export const createAuditLog = mutation({
   args: {
     appointmentId: v.id("appointments"),
     patientId: v.id("patients"),
@@ -11,6 +22,11 @@ export const createLog = mutation({
     teamId: v.id("teams"),
   },
   handler: async (ctx, args) => {
+    const log = createMutationLogger("auditLogs.createAuditLog", {
+      appointmentId: args.appointmentId,
+      action: args.action,
+    });
+
     // Check if a log already exists for this appointment + action combination
     const existingLog = await ctx.db
       .query("logs")
@@ -21,7 +37,7 @@ export const createLog = mutation({
 
     // If log already exists, return the existing log ID
     if (existingLog) {
-      console.log("Duplicate log detected, returning existing log:", existingLog._id);
+      log.info("Duplicate audit log detected, returning existing", { existingLogId: existingLog._id });
       return existingLog._id;
     }
 
@@ -35,17 +51,21 @@ export const createLog = mutation({
       timestamp: new Date().toISOString(),
     });
     
-    console.log("Created new log:", logId);
+    log.info("Created new audit log", { logId });
     return logId;
   },
 });
 
-// Get logs filtered by team, ordered by timestamp descending
-export const getLogsByTeam = query({
+// Get audit logs filtered by team, ordered by timestamp descending
+export const getAuditLogsByTeam = query({
   args: {
     teamId: v.id("teams"),
   },
   handler: async (ctx, args) => {
+    const log = createQueryLogger("auditLogs.getAuditLogsByTeam", {
+      teamId: args.teamId,
+    });
+
     const logs = await ctx.db
       .query("logs")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
@@ -56,25 +76,33 @@ export const getLogsByTeam = query({
 
     // Enrich logs with patient and appointment data
     const enrichedLogs = await Promise.all(
-      logs.map(async (log) => {
-        const patient = await ctx.db.get(log.patientId);
-        const appointment = await ctx.db.get(log.appointmentId);
+      logs.map(async (auditLog) => {
+        const patient = await ctx.db.get(auditLog.patientId);
+        const appointment = await ctx.db.get(auditLog.appointmentId);
         
         return {
-          _id: log._id,
-          _creationTime: log._creationTime,
-          timestamp: log.timestamp,
-          action: log.action,
-          message: log.message,
+          _id: auditLog._id,
+          _creationTime: auditLog._creationTime,
+          timestamp: auditLog.timestamp,
+          action: auditLog.action,
+          message: auditLog.message,
           patientPhone: patient?.phone || "Unknown",
           patientName: patient?.name || "Unknown",
           appointmentDateTime: appointment?.dateTime || "Unknown",
-          appointmentId: log.appointmentId,
-          patientId: log.patientId,
+          appointmentId: auditLog.appointmentId,
+          patientId: auditLog.patientId,
         };
       })
     );
 
+    log.info("Fetched audit logs", { count: enrichedLogs.length });
     return enrichedLogs;
   },
 });
+
+// Backward compatibility aliases
+/** @deprecated Use createAuditLog instead */
+export const createLog = createAuditLog;
+/** @deprecated Use getAuditLogsByTeam instead */
+export const getLogsByTeam = getAuditLogsByTeam;
+

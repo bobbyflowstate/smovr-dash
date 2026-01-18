@@ -1,14 +1,14 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { LOG_ACTIONS } from "@/lib/log-actions";
+import { AUDIT_LOG_ACTIONS } from "@/lib/audit-log-actions";
 import { useAppointmentAction } from "@/lib/use-appointment-action";
 import AppointmentStatusCard from "@/components/AppointmentStatusCard";
 
 export default function RescheduleCancelPage() {
   const params = useParams();
   const appointmentId = params.appointmentId as string;
-  const { status, errorMessage, contactPhone } = useAppointmentAction(appointmentId, LOG_ACTIONS.RESCHEDULE_CANCEL);
+  const { status, errorMessage, contactPhone } = useAppointmentAction(appointmentId, AUDIT_LOG_ACTIONS.RESCHEDULE_CANCEL);
 
   return (
     <AppointmentStatusCard

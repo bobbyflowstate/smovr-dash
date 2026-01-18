@@ -23,6 +23,7 @@ import {
   type ReminderAttemptReasonCode,
   type ReminderAttemptStatus,
 } from "./reminder_policies";
+import { createActionLogger, createMutationLogger, createQueryLogger } from "./lib/logger";
 
 const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
 const DEFAULT_HOSPITAL_ADDRESS =
@@ -49,9 +50,11 @@ async function sendReminder24hWebhook(
   timezone: string,
   hospitalAddress: string
 ): Promise<SMSWebhookResult> {
+  const log = createActionLogger("reminders.sendReminder24hWebhook", { appointmentId, patientPhone });
+  
   try {
     if (!BASE_URL) {
-      console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+      log.error("BASE_URL not configured - SMS links would be invalid");
       return {
         ok: false,
         attemptCount: 0,
@@ -74,7 +77,7 @@ async function sendReminder24hWebhook(
     // Send SMS webhook and return detailed status
     return await sendSMSWebhookDetailed(patientPhone, message);
   } catch (error) {
-    console.error('Error preparing 24h reminder webhook:', error);
+    log.error("Error preparing 24h reminder webhook", { error: error instanceof Error ? error.message : String(error) });
     return {
       ok: false,
       attemptCount: 0,
@@ -97,9 +100,11 @@ async function sendReminder1hWebhook(
   timezone: string,
   hospitalAddress: string
 ): Promise<SMSWebhookResult> {
+  const log = createActionLogger("reminders.sendReminder1hWebhook", { appointmentId, patientPhone });
+  
   try {
     if (!BASE_URL) {
-      console.error('BASE_URL not configured in Convex dashboard. Cannot send reminder webhook - SMS links would be invalid. Please set BASE_URL in Convex dashboard environment variables.');
+      log.error("BASE_URL not configured - SMS links would be invalid");
       return {
         ok: false,
         attemptCount: 0,
@@ -122,7 +127,7 @@ async function sendReminder1hWebhook(
     // Send SMS webhook and return detailed status
     return await sendSMSWebhookDetailed(patientPhone, message);
   } catch (error) {
-    console.error('Error preparing 1h reminder webhook:', error);
+    log.error("Error preparing 1h reminder webhook", { error: error instanceof Error ? error.message : String(error) });
     return {
       ok: false,
       attemptCount: 0,
@@ -167,7 +172,8 @@ function getCurrentHourInTimezone(timezone: string): number {
  */
 export const checkAndSendReminders = internalAction({
   handler: async (ctx) => {
-    console.log('Reminders cron: Starting check');
+    const log = createActionLogger("reminders.checkAndSendReminders");
+    log.info("Starting reminder check");
 
     // Check quiet hours first
     // NOTE: Quiet hours are enforced as 10pm–5am in clinic timezone.
@@ -181,12 +187,10 @@ export const checkAndSendReminders = internalAction({
     const quietHoursValid =
       !isNaN(quietStart) && !isNaN(quietEnd) && validateQuietHours(quietStart, quietEnd);
 
-    console.log(
-      `Reminders cron: quietHours=${quietStart}-${quietEnd} valid=${quietHoursValid} (timezone is per-team)`
-    );
+    log.debug("Quiet hours configuration", { quietStart, quietEnd, valid: quietHoursValid });
 
     if (!quietHoursValid) {
-      console.log('Reminders cron: Invalid quiet hours configuration; reminders will be marked failed_precondition');
+      log.warn("Invalid quiet hours configuration; reminders will be marked failed_precondition");
     }
 
     // Get current time
@@ -206,9 +210,11 @@ export const checkAndSendReminders = internalAction({
     });
 
     const allAppointments = [...appts1h, ...appts24h];
-    console.log(
-      `Reminders cron: Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
-    );
+    log.info("Found eligible appointments", { 
+      total: allAppointments.length, 
+      "1hWindow": appts1h.length, 
+      "24hWindow": appts24h.length 
+    });
 
     const noteFor = noteForAttempt;
 
@@ -415,7 +421,7 @@ export const checkAndSendReminders = internalAction({
                   dedupMinutes: 240,
                 });
               } else {
-                console.log(`Sending 24h reminder for appointment ${appointment._id}`);
+                log.debug("Sending 24h reminder", { appointmentId: appointment._id });
                 const result = await sendReminder24hWebhook(
                   appointment._id,
                   patient.name || null,
@@ -590,7 +596,7 @@ export const checkAndSendReminders = internalAction({
                   dedupMinutes: 120,
                 });
               } else {
-                console.log(`Sending 1h reminder for appointment ${appointment._id}`);
+                log.debug("Sending 1h reminder", { appointmentId: appointment._id });
                 const result = await sendReminder1hWebhook(
                   appointment._id,
                   patient.name || null,
@@ -662,7 +668,7 @@ export const checkAndSendReminders = internalAction({
           }
         }
       } catch (error) {
-        console.error(`Error processing appointment ${appointment._id}:`, error);
+        log.error("Error processing appointment", { appointmentId: appointment._id, error: error instanceof Error ? error.message : String(error) });
         // Record a durable processing failure so we can explain "why not sent"
         try {
           await ctx.runMutation(internal.reminders.recordReminderAttempt, {
@@ -688,7 +694,7 @@ export const checkAndSendReminders = internalAction({
       }
     }
 
-    console.log('Reminders cron: Finished check');
+    log.info("Reminder check completed");
   },
 });
 
@@ -1011,20 +1017,31 @@ export const recordAppointmentSmsAttempt = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    const log = createMutationLogger("reminders.recordAppointmentSmsAttempt", {
+      appointmentId: args.appointmentId,
+      messageType: args.messageType,
+      userEmail: args.userEmail,
+    });
+    
     // Enforce multi-tenancy via userEmail -> teamId.
     const user = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.userEmail))
       .unique();
-    if (!user) throw new Error("User not found in database.");
+    if (!user) {
+      log.error("User not found in database");
+      throw new Error("User not found in database.");
+    }
 
     const appointment = await ctx.db.get(args.appointmentId);
     if (!appointment || appointment.teamId !== user.teamId) {
+      log.warn("Appointment not found or not in user's team");
       throw new Error("Appointment not found.");
     }
 
     // Optional safety: ensure the patient matches the appointment.
     if (appointment.patientId !== args.patientId) {
+      log.warn("Patient does not match appointment");
       throw new Error("Patient does not match appointment.");
     }
 
@@ -1044,6 +1061,8 @@ export const recordAppointmentSmsAttempt = mutation({
     const note = args.webhookResult.ok
       ? `${messageLabel} sent successfully. It may take 1–3 minutes to arrive on the patient's phone.`
       : `${messageLabel} not sent due to SMS webhook failure.`;
+
+    log.info("Recording SMS attempt", { status, reasonCode });
 
     await ctx.db.insert("reminderAttempts", {
       appointmentId: args.appointmentId,
@@ -1281,9 +1300,16 @@ export const markReminderSentIfInWindow = mutation({
     teamId: v.id("teams"),
   },
   handler: async (ctx, args): Promise<{ marked24h: boolean }> => {
+    const log = createMutationLogger("reminders.markReminderSentIfInWindow", {
+      appointmentId: args.appointmentId,
+      teamId: args.teamId,
+    });
+    
     const now = new Date();
     const appointmentDate = new Date(args.appointmentDateTime);
     const hoursUntil = hoursUntilAppointment(appointmentDate, now);
+    
+    log.debug("Checking if reminder should be suppressed", { hoursUntil: hoursUntil.toFixed(2) });
 
     const marked: { marked24h: boolean; marked1h: boolean } = {
       marked24h: false,
@@ -1345,11 +1371,7 @@ export const markReminderSentIfInWindow = mutation({
     if (hoursUntil >= BOOKING_SUPPRESS_24H_START && hoursUntil < BOOKING_SUPPRESS_24H_END) {
       marked.marked24h = await maybeInsertSuppression("24h");
       if (marked.marked24h) {
-        console.log(
-          `Suppressed 24h reminder for appointment ${args.appointmentId} (booking confirmation at ${hoursUntil.toFixed(
-            2
-          )}h before appointment)`
-        );
+        log.info("Suppressed 24h reminder (booking confirmation)", { hoursUntil: hoursUntil.toFixed(2) });
       }
     }
 
@@ -1357,11 +1379,7 @@ export const markReminderSentIfInWindow = mutation({
     if (hoursUntil >= BOOKING_SUPPRESS_1H_START && hoursUntil < BOOKING_SUPPRESS_1H_END) {
       marked.marked1h = await maybeInsertSuppression("1h");
       if (marked.marked1h) {
-        console.log(
-          `Suppressed 1h reminder for appointment ${args.appointmentId} (booking confirmation at ${hoursUntil.toFixed(
-            2
-          )}h before appointment)`
-        );
+        log.info("Suppressed 1h reminder (booking confirmation)", { hoursUntil: hoursUntil.toFixed(2) });
       }
     }
 
