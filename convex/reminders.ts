@@ -712,26 +712,28 @@ export const checkAndSendReminders = internalAction({
  */
 export const testCheckReminders = internalAction({
   handler: async (ctx): Promise<{ message: string; appointmentsChecked: number; remindersSent: { "24h": number; "1h": number } } | { message: string; currentHour: number; quietHours: string } | { message: string; error: string }> => {
+    const log = createActionLogger("reminders.testCheckReminders");
+    
     try {
-      console.log('═══════════════════════════════════════════════════════');
-      console.log('TEST: Manually triggering reminder check');
-      console.log('═══════════════════════════════════════════════════════');
+      log.info("Manually triggering reminder check (TEST)");
       
       // Quiet hours are enforced as 10pm–5am in the team's timezone (per appointment).
       // We do not skip the whole run; we evaluate quiet hours per appointment like production.
       const quietStartStr = process.env.SMS_QUIET_HOURS_START;
       const quietEndStr = process.env.SMS_QUIET_HOURS_END;
-      console.log(
-        `TEST: Quiet hours env provided: ${quietStartStr || "unset"}-${quietEndStr || "unset"} (enforced=22-5, per-team timezone)`
-      );
+      log.debug("Quiet hours env", { 
+        quietStartEnv: quietStartStr || "unset", 
+        quietEndEnv: quietEndStr || "unset",
+        enforced: "22-5 per-team timezone"
+      });
 
       // Get current time
       const now = new Date();
       const nowISO = now.toISOString();
-      console.log(`TEST: Current time: ${nowISO}`);
+      log.debug("Current time", { nowISO });
 
       // Query only eligible appointments (matches production cron behavior)
-      console.log('TEST: Querying eligible appointments (1h + 24h windows)...');
+      log.debug("Querying eligible appointments");
       const ranges = getEligibleReminderRangesISO(now, REMINDER_WINDOWS_HOURS);
       const appts1h = await ctx.runQuery(internal.reminders.getAppointmentsInRange, {
         startISO: ranges["1h"].startISO,
@@ -749,9 +751,11 @@ export const testCheckReminders = internalAction({
         teamId: Id<"teams">;
       }> = [...appts1h, ...appts24h];
 
-      console.log(
-        `TEST: ✅ Found ${allAppointments.length} eligible appointments (1h window: ${appts1h.length}, 24h window: ${appts24h.length})`
-      );
+      log.info("Found eligible appointments", { 
+        total: allAppointments.length, 
+        "1hWindow": appts1h.length, 
+        "24hWindow": appts24h.length 
+      });
 
       let remindersSent = { "24h": 0, "1h": 0 };
 
@@ -775,15 +779,17 @@ export const testCheckReminders = internalAction({
           const currentHour = getCurrentHourInTimezone(timezone);
           const inQuietHours = isInQuietHours(currentHour, DEFAULT_QUIET_HOURS_START, DEFAULT_QUIET_HOURS_END);
           
-          console.log(
-            `TEST: Processing appointment ${appointment._id} - ${hoursUntil.toFixed(
-              2
-            )}h until appointment (timezone=${timezone} currentHour=${currentHour} inQuiet=${inQuietHours})`
-          );
+          log.debug("Processing appointment", { 
+            appointmentId: appointment._id, 
+            hoursUntil: hoursUntil.toFixed(2), 
+            timezone, 
+            currentHour, 
+            inQuietHours 
+          });
 
           // Check if appointment needs 24h reminder
           if (isWithinWindow("24h", hoursUntil)) {
-            console.log(`TEST: ⏰ Appointment ${appointment._id} is in 24h reminder window`);
+            log.debug("Appointment in 24h reminder window", { appointmentId: appointment._id });
             
             // Check if 24h reminder already sent (includes bookings within the 24h window)
             const existingReminder = await ctx.runQuery(
@@ -796,9 +802,7 @@ export const testCheckReminders = internalAction({
 
             if (!existingReminder) {
               if (inQuietHours) {
-                console.log(
-                  `TEST: ⏭️ Skipping send due to quiet hours (22-5) in team timezone (${timezone})`
-                );
+                log.debug("Skipping 24h reminder due to quiet hours", { timezone });
               } else {
               // Get patient details
               const patient = await ctx.runQuery(internal.reminders.getPatientById, {
@@ -806,7 +810,7 @@ export const testCheckReminders = internalAction({
               });
 
               if (patient) {
-                console.log(`TEST: 📤 Sending 24h reminder for appointment ${appointment._id} to ${patient.phone}`);
+                log.info("Sending 24h reminder", { appointmentId: appointment._id, phone: patient.phone });
                 const result = await sendReminder24hWebhook(
                   appointment._id,
                   patient.name || null,
@@ -827,16 +831,16 @@ export const testCheckReminders = internalAction({
                   });
                   
                   remindersSent["24h"]++;
-                  console.log(`TEST: ✅ 24h reminder sent and recorded for appointment ${appointment._id}`);
+                  log.info("24h reminder sent and recorded", { appointmentId: appointment._id });
                 } else {
-                  console.log(`TEST: ⚠️ 24h reminder webhook failed for appointment ${appointment._id}`);
+                  log.warn("24h reminder webhook failed", { appointmentId: appointment._id });
                 }
               } else {
-                console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
+                log.warn("Patient not found for 24h reminder", { appointmentId: appointment._id });
               }
               }
             } else {
-              console.log(`TEST: ⏭️ 24h reminder already sent for appointment ${appointment._id}`);
+              log.debug("24h reminder already sent", { appointmentId: appointment._id });
             }
           } else {
             // Log why 24h reminder wasn't sent
@@ -853,7 +857,7 @@ export const testCheckReminders = internalAction({
 
           // Check if appointment needs 1h reminder
           if (isWithinWindow("1h", hoursUntil)) {
-            console.log(`TEST: ⏰ Appointment ${appointment._id} is in 1h reminder window`);
+            log.debug("Appointment in 1h reminder window", { appointmentId: appointment._id });
             // Check if 1h reminder already sent
             const existingReminder = await ctx.runQuery(
               internal.reminders.getReminderSentRecord,
@@ -875,7 +879,7 @@ export const testCheckReminders = internalAction({
               });
 
               if (patient) {
-                console.log(`TEST: 📤 Sending 1h reminder for appointment ${appointment._id} to ${patient.phone}`);
+                log.info("Sending 1h reminder", { appointmentId: appointment._id, phone: patient.phone });
                 const result = await sendReminder1hWebhook(
                   appointment._id,
                   patient.name || null,
@@ -896,16 +900,16 @@ export const testCheckReminders = internalAction({
                   });
                   
                   remindersSent["1h"]++;
-                  console.log(`TEST: ✅ 1h reminder sent and recorded for appointment ${appointment._id}`);
+                  log.info("1h reminder sent and recorded", { appointmentId: appointment._id });
                 } else {
-                  console.log(`TEST: ⚠️ 1h reminder webhook failed for appointment ${appointment._id}`);
+                  log.warn("1h reminder webhook failed", { appointmentId: appointment._id });
                 }
               } else {
-                console.log(`TEST: ⚠️ Patient not found for appointment ${appointment._id}`);
+                log.warn("Patient not found for 1h reminder", { appointmentId: appointment._id });
               }
               }
             } else {
-              console.log(`TEST: ⏭️ 1h reminder already sent for appointment ${appointment._id}`);
+              log.debug("1h reminder already sent", { appointmentId: appointment._id });
             }
           } else {
             // Log why 1h reminder wasn't sent (only if it's close enough to be relevant)
@@ -923,7 +927,7 @@ export const testCheckReminders = internalAction({
             }
           }
         } catch (error) {
-          console.error(`TEST: ❌ Error processing appointment ${appointment._id}:`, error);
+          log.error("Error processing appointment", error, { appointmentId: appointment._id });
           // Continue with next appointment - don't fail entire batch
         }
       }
@@ -934,15 +938,12 @@ export const testCheckReminders = internalAction({
         remindersSent 
       };
       
-      console.log('═══════════════════════════════════════════════════════');
-      console.log('TEST: ✅ Finished check');
-      console.log(`TEST: Result:`, JSON.stringify(result, null, 2));
-      console.log('═══════════════════════════════════════════════════════');
+      log.info("Test reminder check completed", result);
       
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('TEST: ❌ Fatal error in testCheckReminders:', error);
+      log.error("Fatal error in testCheckReminders", error);
       return { 
         message: 'Error running reminder check',
         error: errorMessage

@@ -12,6 +12,9 @@
  * This logger writes structured JSON to console immediately (no buffering)
  * so logs are never lost and appear in the Convex dashboard.
  *
+ * Each logger instance generates a unique request ID for correlating
+ * all log entries within a single function invocation.
+ *
  * @example
  * ```typescript
  * import { createConvexLogger } from './lib/logger';
@@ -30,6 +33,16 @@
  * });
  * ```
  */
+
+/**
+ * Generate a unique request ID for correlating logs within a function invocation.
+ * Format: cvx-{timestamp}-{random}
+ */
+function generateRequestId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `cvx-${timestamp}-${random}`;
+}
 
 /**
  * Log levels for Convex logger.
@@ -53,6 +66,8 @@ const LOG_LEVEL_VALUES: Record<ConvexLogLevel, number> = {
 export interface ConvexLogContext {
   /** Name of the Convex function (e.g., 'reminders.sendReminder') */
   functionName: string;
+  /** Unique request ID for correlating logs (auto-generated if not provided) */
+  requestId?: string;
   /** Team ID for multi-tenant context */
   teamId?: string;
   /** User email if available */
@@ -91,6 +106,9 @@ export interface ConvexLogger {
  * Outputs JSON to console which is captured by Convex dashboard.
  * All logs are synchronous and immediate - no buffering, no data loss.
  *
+ * A unique request ID is auto-generated for each logger instance to
+ * correlate all log entries within a single function invocation.
+ *
  * @param context - Base context for all log entries
  * @param options - Logger options
  * @returns A ConvexLogger instance
@@ -101,6 +119,10 @@ export function createConvexLogger(
 ): ConvexLogger {
   const { minLevel = 'debug' } = options;
   const minLevelValue = LOG_LEVEL_VALUES[minLevel];
+  
+  // Auto-generate requestId if not provided
+  const requestId = context.requestId || generateRequestId();
+  const contextWithRequestId = { ...context, requestId };
 
   /**
    * Write a log entry to console as JSON.
@@ -123,7 +145,7 @@ export function createConvexLogger(
       message,
       service: 'smovr-dash',
       runtime: 'convex',
-      ...context,
+      ...contextWithRequestId,
       ...extra,
     };
 
@@ -171,8 +193,9 @@ export function createConvexLogger(
     },
 
     child: (additionalContext: Partial<ConvexLogContext>): ConvexLogger => {
+      // Pass the same requestId to maintain correlation
       return createConvexLogger(
-        { ...context, ...additionalContext },
+        { ...contextWithRequestId, ...additionalContext },
         options
       );
     },
