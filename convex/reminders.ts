@@ -869,9 +869,7 @@ export const testCheckReminders = internalAction({
 
             if (!existingReminder) {
               if (inQuietHours) {
-                console.log(
-                  `TEST: ⏭️ Skipping send due to quiet hours (22-5) in team timezone (${timezone})`
-                );
+                log.debug("Skipping 1h reminder due to quiet hours", { timezone });
               } else {
               // Get patient details
               const patient = await ctx.runQuery(internal.reminders.getPatientById, {
