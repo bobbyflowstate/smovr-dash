@@ -122,6 +122,7 @@ export const myMutation = mutation({
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `OFFICE_ID` | Office/tenant identifier - included in all logs for multi-tenant separation | - |
 | `BETTERSTACK_SOURCE_TOKEN` | BetterStack source token (enables BetterStack sink) | - |
 | `BETTERSTACK_ENDPOINT` | Custom endpoint URL for EU/other regions (e.g., `https://s1234567.eu-nbg-2.betterstackdata.com`) | `https://in.logs.betterstack.com` |
 | `BETTERSTACK_MIN_LEVEL` | Minimum level for BetterStack: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` | `INFO` |

@@ -182,6 +182,8 @@ export function getContextForSerialization(): LogContext {
  * Create a context object for a new request.
  * Helper function to create a standard request context.
  *
+ * Automatically includes OFFICE_ID from environment for tenant separation.
+ *
  * @param options - Request information
  * @returns A LogContext for the request
  */
@@ -194,6 +196,8 @@ export function createRequestContext(options: {
 }): LogContext {
   return {
     requestId: generateRequestId(),
+    // Include OFFICE_ID for tenant separation
+    ...(process.env.OFFICE_ID && { officeId: process.env.OFFICE_ID }),
     ...options,
   };
 }
@@ -235,6 +239,8 @@ export async function withContext<T>(
   const logContext: LogContext = {
     requestId,
     route: name,
+    // Include OFFICE_ID for tenant separation
+    ...(process.env.OFFICE_ID && { officeId: process.env.OFFICE_ID }),
   };
 
   return runWithContext(logContext, async () => {

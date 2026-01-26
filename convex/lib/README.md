@@ -182,6 +182,16 @@ const itemLog = log.child({ itemId: 'item_456' });
 
 ---
 
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `OFFICE_ID` | Office/tenant identifier - automatically included as `officeId` in all logs for multi-tenant separation |
+
+Set this in your Convex environment via the Convex dashboard or `npx convex env set OFFICE_ID your-office-id`.
+
+---
+
 For the full observability system documentation (including Next.js integration), see:
 `src/lib/observability/README.md`
 

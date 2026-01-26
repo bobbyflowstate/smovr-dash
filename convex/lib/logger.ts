@@ -145,6 +145,8 @@ export function createConvexLogger(
       message,
       service: 'smovr-dash',
       runtime: 'convex',
+      // Include OFFICE_ID for tenant separation
+      ...(process.env.OFFICE_ID && { officeId: process.env.OFFICE_ID }),
       ...contextWithRequestId,
       ...extra,
     };

@@ -131,6 +131,8 @@ function betterStackTransform(entry: LogEntry): Record<string, unknown> {
     // Service identification
     service: 'smovr-dash',
     env: process.env.NODE_ENV ?? 'development',
+    // Include OFFICE_ID for tenant separation
+    ...(process.env.OFFICE_ID && { officeId: process.env.OFFICE_ID }),
 
     // Context tags (spread all)
     ...entry.tags,
