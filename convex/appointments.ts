@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { createQueryLogger, createMutationLogger } from "./lib/logger";
 
 export const get = query({
   args: {
@@ -7,7 +8,8 @@ export const get = query({
     includeCancelled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    console.log("appointments.get: Getting appointments for user:", args.userEmail);
+    const log = createQueryLogger("appointments.get", { userEmail: args.userEmail });
+    log.debug("Getting appointments for user");
 
     // Look up the user by their email
     const user = await ctx.db
@@ -16,11 +18,11 @@ export const get = query({
       .unique();
 
     if (!user) {
-      console.log("appointments.get: User not found in database");
+      log.warn("User not found in database");
       return [];
     }
 
-    console.log("appointments.get: Found user:", user._id);
+    log.debug("Found user", { userId: user._id });
     const teamId = user.teamId;
 
     // Get team information
@@ -46,6 +48,7 @@ export const get = query({
       })
     );
 
+    log.info("Fetched appointments", { count: appointmentsWithPatient.length, teamId });
     return {
       appointments: appointmentsWithPatient,
       teamName: team?.name || "Unknown Team",
@@ -60,7 +63,9 @@ export const getById = query({
     appointmentId: v.id("appointments"),
   },
   handler: async (ctx, args) => {
+    const log = createQueryLogger("appointments.getById", { appointmentId: args.appointmentId });
     const appointment = await ctx.db.get(args.appointmentId);
+    log.debug("Fetched appointment", { found: !!appointment });
     return appointment;
   },
 });
@@ -71,7 +76,8 @@ export const getExistingForPatient = query({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log("appointments.getExistingForPatient: Checking for existing appointments for phone:", args.phone);
+    const log = createQueryLogger("appointments.getExistingForPatient", { phone: args.phone });
+    log.debug("Checking for existing appointments");
 
     // Look up the user by their email
     const user = await ctx.db
@@ -80,7 +86,7 @@ export const getExistingForPatient = query({
       .unique();
 
     if (!user) {
-      console.log("appointments.getExistingForPatient: User not found in database");
+      log.warn("User not found in database");
       return null;
     }
 
@@ -94,7 +100,7 @@ export const getExistingForPatient = query({
       .first();
 
     if (!patient) {
-      // No patient found, so no existing appointments
+      log.debug("No patient found for phone");
       return null;
     }
 
@@ -116,6 +122,7 @@ export const getExistingForPatient = query({
 
     // Return the first (most immediate) future appointment if any
     if (existingAppointments.length === 0) {
+      log.debug("No future appointments found for patient");
       return null;
     }
 
@@ -125,6 +132,7 @@ export const getExistingForPatient = query({
     );
 
     const appointment = existingAppointments[0];
+    log.info("Found existing appointment", { appointmentId: appointment._id, patientId: patient._id });
     
     return {
       ...appointment,
@@ -139,7 +147,11 @@ export const cancel = mutation({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log("appointments.cancel: Canceling appointment for user:", args.userEmail);
+    const log = createMutationLogger("appointments.cancel", { 
+      appointmentId: args.id, 
+      userEmail: args.userEmail 
+    });
+    log.info("Canceling appointment");
 
     // Look up the user by their email
     const user = await ctx.db
@@ -148,10 +160,11 @@ export const cancel = mutation({
       .unique();
 
     if (!user) {
+      log.error("User not found in database");
       throw new Error("User not found in database.");
     }
 
-    console.log("appointments.cancel: Found user:", user._id);
+    log.debug("Found user", { userId: user._id });
     const teamId = user.teamId;
 
     const appointment = await ctx.db.get(args.id);
@@ -162,7 +175,12 @@ export const cancel = mutation({
         cancelledAt: new Date().toISOString(),
         cancelledBy: args.userEmail,
       });
+      log.info("Appointment cancelled successfully");
     } else {
+      log.warn("Permission denied - appointment not in user's team", { 
+        appointmentTeamId: appointment?.teamId, 
+        userTeamId: teamId 
+      });
       throw new Error("You do not have permission to cancel this appointment.");
     }
   },

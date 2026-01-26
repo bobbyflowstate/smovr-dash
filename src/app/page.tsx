@@ -98,7 +98,7 @@ export default async function Home() {
             </Link>
             
             <Link 
-              href="/logs" 
+              href="/audit-logs" 
               className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
             >
               <div className="flex items-center justify-center w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-lg mb-4 group-hover:bg-purple-200 dark:group-hover:bg-purple-800 transition-colors">
@@ -107,10 +107,10 @@ export default async function Home() {
                 </svg>
               </div>
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Logs
+                Audit Logs
               </h2>
               <p className="text-gray-600 dark:text-gray-400 text-sm">
-                View system logs and audit trail information
+                Track patient responses to appointment notifications
               </p>
             </Link>
           </div>

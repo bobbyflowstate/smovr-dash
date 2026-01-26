@@ -105,8 +105,8 @@ export default function ClientHeader({ userName, teamId, teamName, onSignOut }: 
               </Link>
             </li>
             <li>
-              <Link href="/logs" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
-                Logs
+              <Link href="/audit-logs" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
+                Audit Logs
               </Link>
             </li>
           </ul>

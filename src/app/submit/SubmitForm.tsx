@@ -431,7 +431,10 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
               Existing Appointment Found
             </h2>
             <p className="text-gray-700 dark:text-gray-300 mb-4">
-              This patient already has a scheduled appointment. Scheduling a new appointment will cancel the existing one.
+              This phone number already has a scheduled appointment. Scheduling a new appointment will cancel the existing one.
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              If this is a different patient, use a different phone number.
             </p>
             
             <div className="space-y-3 mb-6">

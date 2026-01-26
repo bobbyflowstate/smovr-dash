@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { createMutationLogger, createQueryLogger } from "./lib/logger";
 
 export const scheduleAppointment = mutation({
   args: {
@@ -11,7 +12,11 @@ export const scheduleAppointment = mutation({
     userEmail: v.string(), // Pass user email from the authenticated session
   },
   handler: async (ctx, args) => {
-    console.log("scheduleAppointment: Starting mutation for user:", args.userEmail);
+    const log = createMutationLogger("patients.scheduleAppointment", { 
+      userEmail: args.userEmail,
+      phone: args.phone,
+    });
+    log.info("Scheduling appointment");
 
     // Look up the user by their email (which should be linked to their Logto ID)
     const user = await ctx.db
@@ -20,10 +25,11 @@ export const scheduleAppointment = mutation({
       .unique();
 
     if (!user) {
+      log.error("User not found in database");
       throw new Error("User not found in database. Please contact support.");
     }
 
-    console.log("scheduleAppointment: Found user:", user._id);
+    log.debug("Found user", { userId: user._id });
     const teamId = user.teamId;
 
     // Check if patient already exists in the team
@@ -39,6 +45,7 @@ export const scheduleAppointment = mutation({
       patientId = existingPatient._id;
       // Update the patient's name (overwrite)
       await ctx.db.patch(patientId, { name: args.name });
+      log.debug("Updated existing patient", { patientId });
     } else {
       // Create a new patient with name
       patientId = await ctx.db.insert("patients", {
@@ -46,6 +53,7 @@ export const scheduleAppointment = mutation({
         name: args.name,
         teamId,
       });
+      log.debug("Created new patient", { patientId });
     }
 
     // Check if appointment already exists for this patient at this time
@@ -63,8 +71,7 @@ export const scheduleAppointment = mutation({
       .first();
 
     if (existingAppointment) {
-      // Appointment already exists, do nothing
-      console.log("Appointment already exists for patient:", patientId);
+      log.info("Appointment already exists", { appointmentId: existingAppointment._id, patientId });
       return { patientId, appointmentId: existingAppointment._id, teamId, newAppointment: false };
     }
 
@@ -78,8 +85,7 @@ export const scheduleAppointment = mutation({
       teamId,
     });
 
-    console.log("Created new appointment:", appointmentId);
-
+    log.info("Created new appointment", { appointmentId, patientId, teamId });
     return { patientId, appointmentId, teamId, newAppointment: true };
   },
 });
@@ -90,7 +96,9 @@ export const getById = query({
     patientId: v.id("patients"),
   },
   handler: async (ctx, args) => {
+    const log = createQueryLogger("patients.getById", { patientId: args.patientId });
     const patient = await ctx.db.get(args.patientId);
+    log.debug("Fetched patient", { found: !!patient });
     return patient;
   },
 });
@@ -101,17 +109,22 @@ export const getByTeam = query({
     teamId: v.id("teams"),
   },
   handler: async (ctx, args) => {
+    const log = createQueryLogger("patients.getByTeam", { teamId: args.teamId });
+    
     const patients = await ctx.db
       .query("patients")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
     
     // Only return patients that have names
-    return patients
+    const patientsWithNames = patients
       .filter(p => p.name)
       .map(p => ({
         phone: p.phone,
         name: p.name!,
       }));
+    
+    log.debug("Fetched patients for team", { total: patients.length, withNames: patientsWithNames.length });
+    return patientsWithNames;
   },
 });

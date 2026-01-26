@@ -7,7 +7,7 @@ import {
   getTimezoneDisplayName,
 } from '@/lib/timezone-utils';
 
-interface Log {
+interface AuditLog {
   _id: string;
   timestamp: string;
   action: string;
@@ -17,8 +17,8 @@ interface Log {
   appointmentDateTime: string;
 }
 
-export default function LogsClient() {
-  const [logs, setLogs] = useState<Log[]>([]);
+export default function AuditLogsClient() {
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
@@ -26,23 +26,23 @@ export default function LogsClient() {
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
-    fetchLogs();
+    fetchAuditLogs();
   }, []);
 
-  const fetchLogs = async () => {
+  const fetchAuditLogs = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/logs");
+      const response = await fetch("/api/audit-logs");
 
       if (!response.ok) {
-        throw new Error("Failed to fetch logs");
+        throw new Error("Failed to fetch audit logs");
       }
 
       const data = await response.json();
-      setLogs(data);
+      setAuditLogs(data);
     } catch (err) {
-      console.error("Error fetching logs:", err);
-      setError(err instanceof Error ? err.message : "Failed to load logs");
+      console.error("Error fetching audit logs:", err);
+      setError(err instanceof Error ? err.message : "Failed to load audit logs");
     } finally {
       setLoading(false);
     }
@@ -136,11 +136,11 @@ export default function LogsClient() {
               </svg>
             </div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              Error Loading Logs
+              Error Loading Audit Logs
             </h2>
             <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
             <button
-              onClick={fetchLogs}
+              onClick={fetchAuditLogs}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white rounded-lg transition-colors"
             >
               Try Again
@@ -163,7 +163,7 @@ export default function LogsClient() {
           </p>
         </div>
 
-        {logs.length === 0 ? (
+        {auditLogs.length === 0 ? (
           <div className="p-12 text-center">
             <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg
@@ -181,7 +181,7 @@ export default function LogsClient() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              No logs yet
+              No audit logs yet
             </h3>
             <p className="text-gray-600 dark:text-gray-400">
               Patient activity will appear here when they respond to appointment notifications
@@ -213,36 +213,36 @@ export default function LogsClient() {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {logs.map((log) => (
+                {auditLogs.map((auditLog) => (
                   <tr
-                    key={log._id}
+                    key={auditLog._id}
                     className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
-                      {formatTimestamp(log.timestamp)}
+                      {formatTimestamp(auditLog.timestamp)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                      {log.patientName}
+                      {auditLog.patientName}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {log.patientPhone}
+                      {auditLog.patientPhone}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {isValidDate(log.appointmentDateTime) 
-                        ? formatDateTimeInAppointmentTimezone(new Date(log.appointmentDateTime))
-                        : log.appointmentDateTime || "Unknown"}
+                      {isValidDate(auditLog.appointmentDateTime) 
+                        ? formatDateTimeInAppointmentTimezone(new Date(auditLog.appointmentDateTime))
+                        : auditLog.appointmentDateTime || "Unknown"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getActionBadgeColor(
-                          log.action
+                          auditLog.action
                         )}`}
                       >
-                        {formatAction(log.action)}
+                        {formatAction(auditLog.action)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                      {log.message}
+                      {auditLog.message}
                     </td>
                   </tr>
                 ))}
@@ -252,10 +252,10 @@ export default function LogsClient() {
         )}
       </div>
 
-      {logs.length > 0 && (
+      {auditLogs.length > 0 && (
         <div className="text-center">
           <button
-            onClick={fetchLogs}
+            onClick={fetchAuditLogs}
             className="inline-flex items-center px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <svg

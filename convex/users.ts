@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { createMutationLogger, createQueryLogger } from "./lib/logger";
 
 // New app-layer authentication approach
 export const getOrCreateUserByEmail = mutation({
@@ -9,7 +10,11 @@ export const getOrCreateUserByEmail = mutation({
     logtoUserId: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log("getOrCreateUserByEmail: Looking for user with email:", args.email);
+    const log = createMutationLogger("users.getOrCreateUserByEmail", { 
+      email: args.email,
+      logtoUserId: args.logtoUserId,
+    });
+    log.debug("Looking for user");
 
     // Check if user already exists by email
     const existingUser = await ctx.db
@@ -18,11 +23,11 @@ export const getOrCreateUserByEmail = mutation({
       .unique();
 
     if (existingUser) {
-      console.log("getOrCreateUserByEmail: Found existing user:", existingUser._id);
+      log.debug("Found existing user", { userId: existingUser._id });
       return existingUser._id;
     }
 
-    console.log("getOrCreateUserByEmail: Creating new user");
+    log.info("Creating new user");
     
     // Create a new team for the new user
     const teamId = await ctx.db.insert("teams", {
@@ -40,7 +45,7 @@ export const getOrCreateUserByEmail = mutation({
       teamId,
     });
 
-    console.log("getOrCreateUserByEmail: Created new user:", newUserId);
+    log.info("Created new user and team", { userId: newUserId, teamId });
     return newUserId;
   },
 });
@@ -50,7 +55,8 @@ export const getUserWithTeam = query({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log("getUserWithTeam: Getting user and team info for:", args.userEmail);
+    const log = createQueryLogger("users.getUserWithTeam", { userEmail: args.userEmail });
+    log.debug("Getting user and team info");
 
     // Look up the user by their email
     const user = await ctx.db
@@ -59,13 +65,14 @@ export const getUserWithTeam = query({
       .unique();
 
     if (!user) {
-      console.log("getUserWithTeam: User not found in database");
+      log.debug("User not found in database");
       return null;
     }
 
     // Get team information
     const team = await ctx.db.get(user.teamId);
 
+    log.debug("Found user with team", { userId: user._id, teamId: user.teamId });
     return {
       userId: user._id,
       userName: user.name,
@@ -79,11 +86,16 @@ export const getUserWithTeam = query({
 // Legacy JWT-based mutation (keeping for now but not used)
 export const getOrCreateUser = mutation({
   handler: async (ctx) => {
+    const log = createMutationLogger("users.getOrCreateUser");
+    
     const identity = await ctx.auth.getUserIdentity();
 
     if (!identity) {
+      log.error("User identity not found");
       throw new Error("User identity not found. Make sure you are logged in.");
     }
+
+    log.debug("Looking for user by token", { tokenIdentifier: identity.tokenIdentifier });
 
     const user = await ctx.db
       .query("users")
@@ -93,8 +105,11 @@ export const getOrCreateUser = mutation({
       .unique();
 
     if (user !== null) {
+      log.debug("Found existing user", { userId: user._id });
       return user._id;
     }
+
+    log.info("Creating new user from identity");
 
     // Create a new team for the new user
     const teamId = await ctx.db.insert("teams", {
@@ -112,6 +127,7 @@ export const getOrCreateUser = mutation({
       teamId,
     });
 
+    log.info("Created new user and team", { userId: newUserId, teamId });
     return newUserId;
   },
 });
