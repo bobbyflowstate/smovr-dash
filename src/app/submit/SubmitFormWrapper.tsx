@@ -4,6 +4,7 @@ import SubmitForm from './SubmitForm';
 import { extractDisplayName, getUserIdentifier } from '@/lib/auth-utils';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../convex/_generated/api';
+import Link from 'next/link';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -26,6 +27,20 @@ export default async function SubmitFormWrapper() {
           <p className="text-gray-600 dark:text-gray-400">
             You must be logged in to schedule appointments. Please log in and try again.
           </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href="/sign-in"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 rounded-lg transition-colors"
+            >
+              Log in
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors border border-gray-200 dark:border-gray-600"
+            >
+              Back to home
+            </Link>
+          </div>
         </div>
       </div>
     );

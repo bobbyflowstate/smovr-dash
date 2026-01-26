@@ -101,6 +101,12 @@ initializeContext(globalSinkRegistry);
 export interface BetterStackConfig {
   /** Your BetterStack source token */
   sourceToken: string;
+  /** 
+   * Custom endpoint URL for your BetterStack source.
+   * Required for EU region sources (e.g., https://s1234567.eu-nbg-2.betterstackdata.com).
+   * Defaults to https://in.logs.betterstack.com (US region).
+   */
+  endpoint?: string;
   /** Minimum log level to send to BetterStack. Defaults to DEBUG (all logs). */
   minLevel?: LogLevel;
   /** Whether to also log to console as fallback. Defaults to true. */
@@ -166,6 +172,7 @@ function betterStackTransform(entry: LogEntry): Record<string, unknown> {
 export function configureBetterStack(config: BetterStackConfig): void {
   const {
     sourceToken,
+    endpoint = 'https://in.logs.betterstack.com',
     minLevel = LogLevel.DEBUG,
     consoleFallback = true,
     batchSize = 10,
@@ -175,7 +182,7 @@ export function configureBetterStack(config: BetterStackConfig): void {
   globalSinkRegistry.register(
     new ExternalSink({
       name: 'betterstack',
-      endpoint: 'https://in.logs.betterstack.com',
+      endpoint,
       apiKey: sourceToken,
       authHeader: 'Authorization', // Uses "Bearer <token>" format
       minLevel,
@@ -189,7 +196,7 @@ export function configureBetterStack(config: BetterStackConfig): void {
     })
   );
 
-  globalLogger.info('BetterStack sink configured', { minLevel: LogLevelNames[minLevel] });
+  globalLogger.info('BetterStack sink configured', { endpoint, minLevel: LogLevelNames[minLevel] });
 }
 
 // ============================================================================
@@ -260,13 +267,23 @@ export {
  * Auto-configure BetterStack if BETTERSTACK_SOURCE_TOKEN is set.
  *
  * This runs at module load time, so logs are captured immediately.
- * Set BETTERSTACK_MIN_LEVEL to control minimum log level (DEBUG, INFO, WARN, ERROR, FATAL).
+ * 
+ * Environment variables:
+ * - BETTERSTACK_SOURCE_TOKEN: Required. Your BetterStack source token.
+ * - BETTERSTACK_ENDPOINT: Optional. Custom endpoint URL for EU/other regions.
+ *   Example: https://s1234567.eu-nbg-2.betterstackdata.com
+ * - BETTERSTACK_MIN_LEVEL: Optional. Minimum log level (DEBUG, INFO, WARN, ERROR, FATAL).
+ * - BETTERSTACK_BATCH_SIZE: Optional. Logs to batch before sending (default: 10).
+ * - BETTERSTACK_FLUSH_INTERVAL_MS: Optional. Flush interval in ms (default: 5000).
  */
 function autoConfigureBetterStack(): void {
   const sourceToken = process.env.BETTERSTACK_SOURCE_TOKEN;
   if (!sourceToken) {
     return;
   }
+
+  // Custom endpoint URL (required for EU region, optional for US)
+  const endpoint = process.env.BETTERSTACK_ENDPOINT || 'https://in.logs.betterstack.com';
 
   // Parse min level from env var (default to INFO for external sinks to reduce noise)
   const minLevelStr = process.env.BETTERSTACK_MIN_LEVEL?.toUpperCase() || 'INFO';
@@ -285,7 +302,7 @@ function autoConfigureBetterStack(): void {
   globalSinkRegistry.register(
     new ExternalSink({
       name: 'betterstack',
-      endpoint: 'https://in.logs.betterstack.com',
+      endpoint,
       apiKey: sourceToken,
       authHeader: 'Authorization',
       minLevel,
@@ -300,6 +317,7 @@ function autoConfigureBetterStack(): void {
   );
 
   globalLogger.info('BetterStack sink auto-configured from env', {
+    endpoint,
     minLevel: LogLevelNames[minLevel],
     batchSize,
     flushIntervalMs,
