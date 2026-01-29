@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { LOG_ACTIONS, type LogAction } from "@/lib/log-actions";
+import { AUDIT_LOG_ACTIONS, type AuditLogAction } from "@/lib/audit-log-actions";
 
 export type AppointmentStatus = "loading" | "success" | "error" | "not-found" | "passed";
 
-export function useAppointmentAction(appointmentId: string | undefined, action: LogAction) {
+export function useAppointmentAction(appointmentId: string | undefined, action: AuditLogAction) {
   const [status, setStatus] = useState<AppointmentStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [contactPhone, setContactPhone] = useState<string | undefined>(undefined);
@@ -19,7 +19,7 @@ export function useAppointmentAction(appointmentId: string | undefined, action: 
 
       try {
         // Attempt to log the action - server will check if appointment exists and hasn't passed
-        const response = await fetch("/api/logs", {
+        const response = await fetch("/api/audit-logs", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

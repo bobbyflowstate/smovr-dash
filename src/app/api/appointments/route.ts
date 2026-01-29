@@ -13,56 +13,81 @@ import {
   fetchAppointmentsWithFilter,
   recordBookingConfirmationAndMaybeSuppress,
 } from '@/lib/appointments-integration';
+import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
 // GET /api/appointments - Get user's appointments
 export async function GET(request: NextRequest) {
-  try {
-    // 🔐 Server-side authentication validation
-    const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-    
-    if (!isAuthenticated || !claims?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const ctx = createRequestContext({
+    pathname: request.nextUrl.pathname,
+    method: 'GET',
+    route: 'appointments.list',
+  });
+
+  return runWithContext(ctx, async () => {
+    const log = getLogger();
+
+    try {
+      // 🔐 Server-side authentication validation
+      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+      
+      if (!isAuthenticated || !claims?.email) {
+        log.warn('Unauthorized request');
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
+      const userEmail = claims.email; // 🔑 Server-controlled user identity
+      extendContext({ userEmail });
+      
+      log.info('Fetching appointments');
+
+      const { searchParams } = new URL(request.url);
+      const includeCancelled = searchParams.get('includeCancelled') === '1';
+
+      const result = await fetchAppointmentsWithFilter({
+        convex,
+        api,
+        userEmail,
+        includeCancelled,
+      });
+
+      log.info('Appointments fetched', { count: result.length });
+      return NextResponse.json(result);
+    } catch (error) {
+      log.error('Failed to fetch appointments', error);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
-
-    const userEmail = claims.email; // 🔑 Server-controlled user identity
-    
-    console.log('API: Getting appointments for user:', userEmail);
-
-    const { searchParams } = new URL(request.url);
-    const includeCancelled = searchParams.get('includeCancelled') === '1';
-
-    const result = await fetchAppointmentsWithFilter({
-      convex,
-      api,
-      userEmail,
-      includeCancelled,
-    });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error('Error fetching appointments:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+  });
 }
 
 // POST /api/appointments - Create new appointment
 export async function POST(request: NextRequest) {
-  try {
-    // 🔐 Server-side authentication validation
-    const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-    
-    if (!isAuthenticated || !claims?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const ctx = createRequestContext({
+    pathname: request.nextUrl.pathname,
+    method: 'POST',
+    route: 'appointments.create',
+  });
 
-    const userEmail = claims.email; // 🔑 Server-controlled user identity
-    const userName = extractDisplayName(claims);
-    const logtoUserId = claims.sub;
-    const body = await request.json();
+  return runWithContext(ctx, async () => {
+    const log = getLogger();
 
-    console.log('API: Creating appointment for user:', userEmail);
+    try {
+      // 🔐 Server-side authentication validation
+      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+      
+      if (!isAuthenticated || !claims?.email) {
+        log.warn('Unauthorized request');
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
+      const userEmail = claims.email; // 🔑 Server-controlled user identity
+      const userName = extractDisplayName(claims);
+      const logtoUserId = claims.sub;
+      const body = await request.json();
+      extendContext({ userEmail });
+
+      log.info('Creating appointment', { phone: body.phone });
 
     // Ensure user exists first (also creates team on first run)
     await convex.mutation(api.users.getOrCreateUserByEmail, {
@@ -75,6 +100,9 @@ export async function POST(request: NextRequest) {
     const userInfo = await convex.query(api.users.getUserWithTeam, {
       userEmail,
     });
+    if (userInfo?.teamId) {
+      extendContext({ teamId: userInfo.teamId as string });
+    }
     const team = userInfo?.teamId
       ? await convex.query(api.teams.getById, { teamId: userInfo.teamId as Id<"teams"> })
       : null;
@@ -171,14 +199,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
-      ...result,
-      teamName: userInfo?.teamName || "Unknown Team"
-    });
-  } catch (error) {
-    console.error('Error creating appointment:', error);
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Internal server error' 
-    }, { status: 500 });
-  }
+      log.info('Appointment created', { appointmentId: result.appointmentId });
+      return NextResponse.json({
+        ...result,
+        teamName: userInfo?.teamName || "Unknown Team"
+      });
+    } catch (error) {
+      log.error('Failed to create appointment', error);
+      return NextResponse.json({ 
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      }, { status: 500 });
+    }
+  });
 }
