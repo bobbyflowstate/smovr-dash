@@ -6,6 +6,7 @@ import {
   formatScheduleMessage,
   formatCancelMessage,
   type SMSWebhookResult,
+  type SMSFailureContext,
 } from '../../convex/webhook_utils';
 import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
 
@@ -67,9 +68,17 @@ export async function sendScheduleWebhook(
       timezone,
       hospitalAddress
     );
-    
+
+    // Build context for failure alerts
+    const context: SMSFailureContext = {
+      type: "schedule",
+      appointmentId,
+      patientId,
+      description: `Schedule confirmation for ${patientName ?? "unknown patient"}`,
+    };
+
     // Send SMS webhook
-    return await sendSMSWebhookDetailed(phone, message);
+    return await sendSMSWebhookDetailed(phone, message, context);
   } catch (error) {
     console.error('Error preparing schedule webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment creation
@@ -112,9 +121,17 @@ export async function sendCancelWebhook(
     
     // Format message using shared formatter
     const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress);
-    
+
+    // Build context for failure alerts
+    const context: SMSFailureContext = {
+      type: "cancel",
+      appointmentId,
+      patientId,
+      description: `Cancellation notification for ${patientName ?? "unknown patient"}`,
+    };
+
     // Send SMS webhook
-    return await sendSMSWebhookDetailed(phone, message);
+    return await sendSMSWebhookDetailed(phone, message, context);
   } catch (error) {
     console.error('Error preparing cancel webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment cancellation

@@ -22,7 +22,7 @@ NEXT_PUBLIC_BASE_URL=https://your-app-domain.com
 
 # Quiet Hours - Optional
 # Prevents reminders from being sent during specified hours (0-23, 24-hour format)
-# Example: SMS_QUIET_HOURS_START=22 (10 PM) and SMS_QUIET_HOURS_END=8 (8 AM) 
+# Example: SMS_QUIET_HOURS_START=22 (10 PM) and SMS_QUIET_HOURS_END=8 (8 AM)
 # would prevent reminders between 10 PM and 8 AM
 # If not set, reminders will be sent at any time
 SMS_QUIET_HOURS_START=22
@@ -40,6 +40,22 @@ APPOINTMENT_TIMEZONE=America/Los_Angeles
 # Hospital Address - Optional
 # Address included in SMS messages (defaults to example address)
 HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
+
+# ====== SMS FAILURE ALERTS (Optional) ======
+# Configure these to receive email alerts when SMS webhooks fail.
+# Uses Resend (https://resend.com) for email delivery.
+
+# Resend API Key - Required for failure alerts
+# Get this from your Resend dashboard: https://resend.com/api-keys
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+
+# Resend From Email - Required for failure alerts
+# Must be a verified sender domain/email in Resend
+RESEND_FROM_EMAIL=alerts@your-domain.com
+
+# SMS Failure Alert Recipients - Required for failure alerts
+# Comma-separated list of email addresses to receive alerts
+SMS_FAILURE_ALERT_EMAILS=admin@example.com,ops@example.com
 ```
 
 ## Webhook Payload Format
@@ -163,6 +179,12 @@ SMS_QUIET_HOURS_START=22
 SMS_QUIET_HOURS_END=8
 APPOINTMENT_TIMEZONE=America/Los_Angeles
 HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
+
+# Optional: SMS Failure Alerts (Resend)
+# Configure all three to enable email alerts when SMS webhooks fail
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+RESEND_FROM_EMAIL=alerts@your-domain.com
+SMS_FAILURE_ALERT_EMAILS=admin@example.com,ops@example.com
 ```
 
 **Critical**: 
@@ -181,4 +203,48 @@ HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
 - Reminder webhooks are sent via hourly cron jobs, not immediately when appointments are created
 - All messages are pre-formatted in the application code - the webhook receives ready-to-send SMS text
 - GoHighLevel workflows should extract the `phone` and `message` fields and send the SMS directly
+
+## SMS Failure Alerts
+
+When SMS webhooks fail (HTTP errors, timeouts, network issues), the system can automatically send email alerts to administrators. This helps ensure no appointment reminders or confirmations are silently lost.
+
+### Configuration
+
+To enable SMS failure alerts, configure these environment variables in **both** your `.env.local` file and **Convex dashboard**:
+
+| Variable | Description |
+|----------|-------------|
+| `RESEND_API_KEY` | Your Resend API key from https://resend.com/api-keys |
+| `RESEND_FROM_EMAIL` | Verified sender email address in Resend |
+| `SMS_FAILURE_ALERT_EMAILS` | Comma-separated list of admin email addresses |
+
+If any of these are missing, alerts will be skipped silently (logged to console).
+
+### Alert Contents
+
+Each failure alert email includes:
+
+- **Timestamp** - When the failure occurred
+- **Phone number** - Recipient's phone number
+- **Notification type** - `schedule`, `cancel`, `reminder_24h`, `reminder_1h`, or `generic`
+- **Description** - Context about the SMS (e.g., "24h reminder for John Doe")
+- **Appointment/Patient IDs** - When available
+- **Failure reason** - HTTP error, timeout, network error, etc.
+- **HTTP status code** - If applicable
+- **Attempt count** - How many retries were attempted
+- **Error message** - Technical error details
+- **Message preview** - First 200 characters of the SMS body
+
+### Disabling Alerts
+
+To disable SMS failure alerts, simply unset (or remove) any of the three required environment variables. The system will log a message and skip alerting.
+
+### Resend Setup
+
+1. Create an account at https://resend.com
+2. Verify your sender domain or use Resend's test domain for development
+3. Create an API key in the Resend dashboard
+4. Add the environment variables as shown above
+
+**Note**: For production, you should verify a custom domain in Resend to ensure email deliverability.
 

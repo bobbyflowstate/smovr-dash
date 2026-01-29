@@ -6,7 +6,10 @@ import {
   formatReminder24hMessage,
   formatReminder1hMessage,
   sendSMSWebhook,
+  sendSMSWebhookDetailed,
+  type SMSFailureContext,
 } from "../convex/webhook_utils";
+import * as smsFailureAlerts from "../convex/sms_failure_alerts";
 
 const APPT_ID = "ap_123" as any;
 const BASE_URL = "http://localhost:3000";
@@ -247,6 +250,123 @@ describe("convex/webhook_utils (sendSMSWebhook)", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
 
     vi.useRealTimers();
+  });
+});
+
+describe("convex/webhook_utils (SMS failure alerts)", () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("calls notifySmsFailure when webhook fails with HTTP error", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+
+    const notifySpy = vi.spyOn(smsFailureAlerts, "notifySmsFailure").mockResolvedValue();
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 400 }));
+    globalThis.fetch = fetchSpy as any;
+
+    const context: SMSFailureContext = {
+      type: "reminder_24h",
+      appointmentId: "appt123" as any,
+      description: "Test reminder",
+    };
+
+    const result = await sendSMSWebhookDetailed("+15551234567", "hello", context);
+
+    expect(result.ok).toBe(false);
+    expect(result.failureReason).toBe("HTTP_NON_RETRYABLE");
+    expect(notifySpy).toHaveBeenCalledTimes(1);
+    expect(notifySpy).toHaveBeenCalledWith({
+      phone: "+15551234567",
+      message: "hello",
+      context,
+      webhookResult: result,
+    });
+  });
+
+  it("calls notifySmsFailure when webhook fails after retries exhausted", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+    vi.useFakeTimers();
+
+    const notifySpy = vi.spyOn(smsFailureAlerts, "notifySmsFailure").mockResolvedValue();
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 503 }));
+    globalThis.fetch = fetchSpy as any;
+
+    const context: SMSFailureContext = {
+      type: "schedule",
+      appointmentId: "appt456" as any,
+      patientId: "patient789" as any,
+      description: "Schedule confirmation",
+    };
+
+    const promise = sendSMSWebhookDetailed("+15551234567", "hello", context);
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    expect(result.failureReason).toBe("HTTP_RETRY_EXHAUSTED");
+    expect(notifySpy).toHaveBeenCalledTimes(1);
+    expect(notifySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone: "+15551234567",
+        message: "hello",
+        context,
+      })
+    );
+
+    vi.useRealTimers();
+  });
+
+  it("does NOT call notifySmsFailure when webhook succeeds", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+
+    const notifySpy = vi.spyOn(smsFailureAlerts, "notifySmsFailure").mockResolvedValue();
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
+    globalThis.fetch = fetchSpy as any;
+
+    const result = await sendSMSWebhookDetailed("+15551234567", "hello", {
+      type: "cancel",
+      description: "Test cancel",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(notifySpy).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call notifySmsFailure when webhook URL is not configured", async () => {
+    delete process.env.GHL_SMS_WEBHOOK_URL;
+
+    const notifySpy = vi.spyOn(smsFailureAlerts, "notifySmsFailure").mockResolvedValue();
+
+    const result = await sendSMSWebhookDetailed("+15551234567", "hello", {
+      type: "generic",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failureReason).toBe("WEBHOOK_URL_NOT_CONFIGURED");
+    // Should NOT alert for config issues
+    expect(notifySpy).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when notifySmsFailure fails", async () => {
+    process.env.GHL_SMS_WEBHOOK_URL = "http://example.test/webhook";
+
+    const notifySpy = vi
+      .spyOn(smsFailureAlerts, "notifySmsFailure")
+      .mockRejectedValue(new Error("Email send failed"));
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 400 }));
+    globalThis.fetch = fetchSpy as any;
+
+    // Should not throw even if alert fails
+    const result = await sendSMSWebhookDetailed("+15551234567", "hello");
+
+    expect(result.ok).toBe(false);
+    expect(notifySpy).toHaveBeenCalled();
   });
 });
 

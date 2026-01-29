@@ -19,7 +19,8 @@
     "react": "^18",
     "react-datepicker": "^8.7.0",
     "react-dom": "^18",
-    "react-phone-number-input": "^3.4.12"
+    "react-phone-number-input": "^3.4.12",
+    "resend": "^6.9.1"
   },
   "devDependencies": {
     "@types/node": "^20",

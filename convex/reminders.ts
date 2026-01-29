@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult } from "./webhook_utils";
+import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult, type SMSFailureContext } from "./webhook_utils";
 import {
   REMINDER_WINDOWS_HOURS,
   getEligibleReminderRangesISO,
@@ -70,9 +70,16 @@ async function sendReminder24hWebhook(
       timezone,
       hospitalAddress
     );
-    
+
+    // Build context for failure alerts
+    const context: SMSFailureContext = {
+      type: "reminder_24h",
+      appointmentId,
+      description: `24h reminder for ${patientName ?? "unknown patient"}`,
+    };
+
     // Send SMS webhook and return detailed status
-    return await sendSMSWebhookDetailed(patientPhone, message);
+    return await sendSMSWebhookDetailed(patientPhone, message, context);
   } catch (error) {
     console.error('Error preparing 24h reminder webhook:', error);
     return {
@@ -118,9 +125,16 @@ async function sendReminder1hWebhook(
       timezone,
       hospitalAddress
     );
-    
+
+    // Build context for failure alerts
+    const context: SMSFailureContext = {
+      type: "reminder_1h",
+      appointmentId,
+      description: `1h reminder for ${patientName ?? "unknown patient"}`,
+    };
+
     // Send SMS webhook and return detailed status
-    return await sendSMSWebhookDetailed(patientPhone, message);
+    return await sendSMSWebhookDetailed(patientPhone, message, context);
   } catch (error) {
     console.error('Error preparing 1h reminder webhook:', error);
     return {
