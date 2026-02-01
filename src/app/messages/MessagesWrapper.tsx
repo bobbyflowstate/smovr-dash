@@ -1,0 +1,86 @@
+import { getLogtoContext } from '@logto/next/server-actions';
+import { logtoConfig } from '../logto';
+import MessagesClient from './MessagesClient';
+import { extractDisplayName, getUserIdentifier } from '@/lib/auth-utils';
+import { ConvexHttpClient } from 'convex/browser';
+import { api } from '../../../convex/_generated/api';
+import Link from 'next/link';
+
+const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+
+export default async function MessagesWrapper() {
+  const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+
+  if (!isAuthenticated || !claims) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 transition-colors">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Authentication Required</h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            You must be logged in to view messages. Please log in and try again.
+          </p>
+          <div className="flex gap-4">
+            <Link
+              href="/sign-in"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 rounded-lg transition-colors"
+            >
+              Log in
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+            >
+              Back to home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const userIdentifier = getUserIdentifier(claims);
+  const name = extractDisplayName(claims);
+  const logtoUserId = claims.sub;
+
+  if (!userIdentifier) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 transition-colors">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">User Identifier Required</h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Unable to get a user identifier from your account. Please contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Ensure user exists and get team info
+  let teamName = "Unknown Team";
+  
+  try {
+    await convex.mutation(api.users.getOrCreateUserByEmail, {
+      email: userIdentifier,
+      name,
+      logtoUserId,
+    });
+
+    const userInfo = await convex.query(api.users.getUserWithTeam, { 
+      userEmail: userIdentifier 
+    });
+
+    if (userInfo) {
+      teamName = userInfo.teamName || "Unknown Team";
+    }
+  } catch (error) {
+    console.error('MessagesWrapper: Error fetching team info:', error);
+  }
+
+  return (
+    <MessagesClient 
+      userName={name}
+      teamName={teamName}
+    />
+  );
+}
+

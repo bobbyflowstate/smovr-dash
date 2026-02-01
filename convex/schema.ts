@@ -22,6 +22,7 @@ export default defineSchema({
     phone: v.string(),
     name: v.optional(v.string()),
     notes: v.optional(v.string()),
+    birthday: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
     teamId: v.id("teams"),
   })
     .index("by_phone", ["phone"])
@@ -80,4 +81,108 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_appointment", ["appointmentId"])
     .index("by_appointment_action", ["appointmentId", "action"]),
+
+  // ============================================
+  // Two-Way SMS Messaging
+  // ============================================
+
+  // SMS Messages (conversation history - both inbound and outbound)
+  messages: defineTable({
+    teamId: v.id("teams"),
+    patientId: v.id("patients"),
+    appointmentId: v.optional(v.id("appointments")), // optional context link
+
+    // Message content
+    direction: v.union(v.literal("inbound"), v.literal("outbound")),
+    body: v.string(),
+    phone: v.string(), // patient phone (for quick lookups)
+
+    // Status tracking
+    status: v.union(
+      v.literal("pending"), // queued to send
+      v.literal("sent"), // accepted by provider
+      v.literal("delivered"), // confirmed delivered (if provider reports back)
+      v.literal("failed"), // send failed
+      v.literal("received") // inbound message
+    ),
+
+    // Timestamps
+    createdAt: v.string(), // when record created
+    sentAt: v.optional(v.string()), // when sent (outbound)
+    deliveredAt: v.optional(v.string()), // when delivered (if known)
+
+    // Attribution (outbound only)
+    sentByUserId: v.optional(v.id("users")),
+    sentByEmail: v.optional(v.string()),
+
+    // Provider metadata
+    providerMessageId: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+
+    // Template reference (if sent from template)
+    templateId: v.optional(v.id("messageTemplates")),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_patient", ["patientId"])
+    .index("by_team_patient", ["teamId", "patientId"])
+    .index("by_team_createdAt", ["teamId", "createdAt"]),
+
+  // Conversation summaries (for list view performance)
+  conversations: defineTable({
+    teamId: v.id("teams"),
+    patientId: v.id("patients"),
+    patientPhone: v.string(),
+    patientName: v.optional(v.string()),
+
+    // Last message preview
+    lastMessageBody: v.string(),
+    lastMessageDirection: v.union(v.literal("inbound"), v.literal("outbound")),
+    lastMessageAt: v.string(),
+
+    // Unread tracking
+    unreadCount: v.number(),
+
+    // Link to upcoming appointment (if any)
+    latestAppointmentId: v.optional(v.id("appointments")),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_lastMessage", ["teamId", "lastMessageAt"])
+    .index("by_team_patient", ["teamId", "patientId"]),
+
+  // Message templates (quick replies)
+  messageTemplates: defineTable({
+    teamId: v.id("teams"),
+    name: v.string(), // e.g., "Running Late"
+    body: v.string(), // e.g., "No problem! We'll see you when you arrive."
+    category: v.optional(v.string()), // e.g., "Scheduling", "General"
+    sortOrder: v.number(),
+    isActive: v.boolean(),
+    // Supported placeholders: {{patientName}}, {{appointmentDate}}, {{appointmentTime}}
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_active", ["teamId", "isActive"]),
+
+  // Team SMS configuration (per-tenant provider settings)
+  teamSmsConfig: defineTable({
+    teamId: v.id("teams"),
+    provider: v.union(
+      v.literal("ghl"), // GoHighLevel (webhook-based)
+      v.literal("twilio"), // Twilio (API-based)
+      v.literal("vonage"), // Vonage (API-based)
+      v.literal("mock") // Mock for development/testing
+    ),
+    isEnabled: v.boolean(),
+    fromNumber: v.optional(v.string()), // outbound caller ID
+
+    // For webhook-based providers (GHL)
+    webhookUrl: v.optional(v.string()),
+
+    // For API-based providers, store env var prefix (not actual secrets)
+    // e.g., "TEAM_ABC123" → looks up TEAM_ABC123_TWILIO_ACCOUNT_SID at runtime
+    credentialsEnvPrefix: v.optional(v.string()),
+
+    // Inbound webhook secret (for signature verification)
+    inboundWebhookSecret: v.optional(v.string()),
+  })
+    .index("by_team", ["teamId"]),
 });

@@ -2,18 +2,41 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import {
-  sendSMSWebhookDetailed,
   formatScheduleMessage,
   formatCancelMessage,
+  formatAppointmentDateTime,
   type SMSWebhookResult,
 } from '../../convex/webhook_utils';
+
+// Re-export for use in other parts of the app
+export { formatAppointmentDateTime } from '../../convex/webhook_utils';
 import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
+import { getDefaultSMSProvider } from '@/lib/sms';
 
 const FALLBACK_HOSPITAL_ADDRESS =
   process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
 
 /**
+ * Send SMS using the new provider abstraction
+ * Converts the new SendResult to the old SMSWebhookResult format for backwards compatibility
+ */
+async function sendSMSWithProvider(phone: string, message: string): Promise<SMSWebhookResult> {
+  const provider = getDefaultSMSProvider();
+  const result = await provider.sendMessage({ to: phone, body: message });
+  
+  // Convert to legacy format
+  return {
+    ok: result.success,
+    attemptCount: result.attemptCount,
+    httpStatus: result.httpStatus ?? null,
+    failureReason: result.success ? null : (result.failureReason === 'HTTP_ERROR' ? 'HTTP_NON_RETRYABLE' : result.failureReason ?? 'NETWORK_ERROR') as any,
+    errorMessage: result.error ?? null,
+  };
+}
+
+/**
  * Sends a webhook when a new appointment is scheduled
+ * Also logs the message to the conversation history
  */
 export async function sendScheduleWebhook(
   convex: ConvexHttpClient,
@@ -22,6 +45,9 @@ export async function sendScheduleWebhook(
   phone: string,
   name: string | null
 ): Promise<SMSWebhookResult> {
+  let message = '';
+  let teamId: Id<"teams"> | null = null;
+  
   try {
     // Get appointment and patient details
     const appointment = await convex.query(api.appointments.getById, {
@@ -38,6 +64,8 @@ export async function sendScheduleWebhook(
         errorMessage: "APPOINTMENT_NOT_FOUND",
       };
     }
+
+    teamId = appointment.teamId;
 
     const patient = await convex.query(api.patients.getById, {
       patientId,
@@ -59,7 +87,7 @@ export async function sendScheduleWebhook(
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
     
     // Format message using shared formatter
-    const message = formatScheduleMessage(
+    message = formatScheduleMessage(
       patientName,
       appointmentDate,
       appointmentId,
@@ -68,8 +96,28 @@ export async function sendScheduleWebhook(
       hospitalAddress
     );
     
-    // Send SMS webhook
-    return await sendSMSWebhookDetailed(phone, message);
+    // Send SMS using provider abstraction
+    const result = await sendSMSWithProvider(phone, message);
+    
+    // Log to conversation history
+    try {
+      await convex.mutation(api.messages.createSystemMessage, {
+        teamId: appointment.teamId,
+        patientId,
+        appointmentId,
+        phone,
+        body: message,
+        messageType: "booking_confirmation",
+        status: result.ok ? "sent" : "failed",
+        providerMessageId: undefined, // Not available in legacy format
+        errorMessage: result.errorMessage ?? undefined,
+      });
+    } catch (logError) {
+      console.error('Error logging schedule message to conversation:', logError);
+      // Don't fail the SMS send if logging fails
+    }
+    
+    return result;
   } catch (error) {
     console.error('Error preparing schedule webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment creation
@@ -85,6 +133,7 @@ export async function sendScheduleWebhook(
 
 /**
  * Sends a webhook when an appointment is canceled
+ * Also logs the message to the conversation history
  */
 export async function sendCancelWebhook(
   convex: ConvexHttpClient,
@@ -113,8 +162,30 @@ export async function sendCancelWebhook(
     // Format message using shared formatter
     const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress);
     
-    // Send SMS webhook
-    return await sendSMSWebhookDetailed(phone, message);
+    // Send SMS using provider abstraction
+    const result = await sendSMSWithProvider(phone, message);
+    
+    // Log to conversation history
+    if (appointment) {
+      try {
+        await convex.mutation(api.messages.createSystemMessage, {
+          teamId: appointment.teamId,
+          patientId,
+          appointmentId,
+          phone,
+          body: message,
+          messageType: "cancellation",
+          status: result.ok ? "sent" : "failed",
+          providerMessageId: undefined,
+          errorMessage: result.errorMessage ?? undefined,
+        });
+      } catch (logError) {
+        console.error('Error logging cancel message to conversation:', logError);
+        // Don't fail the SMS send if logging fails
+      }
+    }
+    
+    return result;
   } catch (error) {
     console.error('Error preparing cancel webhook:', error);
     // Don't throw - webhook failures shouldn't fail appointment cancellation

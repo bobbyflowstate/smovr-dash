@@ -62,7 +62,7 @@ export default async function Home() {
           </div>
 
           {/* Navigation Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
             <Link 
               href="/appointments" 
               className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
@@ -76,7 +76,7 @@ export default async function Home() {
                 Appointments
               </h2>
               <p className="text-gray-600 dark:text-gray-400 text-sm">
-                Schedule and manage patient appointments with ease
+                Schedule and manage patient appointments
               </p>
             </Link>
             
@@ -93,7 +93,41 @@ export default async function Home() {
                 Submit
               </h2>
               <p className="text-gray-600 dark:text-gray-400 text-sm">
-                Submit and process patient information securely
+                Submit patient information securely
+              </p>
+            </Link>
+
+            <Link 
+              href="/patients" 
+              className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
+            >
+              <div className="flex items-center justify-center w-12 h-12 bg-orange-100 dark:bg-orange-900 rounded-lg mb-4 group-hover:bg-orange-200 dark:group-hover:bg-orange-800 transition-colors">
+                <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Patients
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                Manage patient records and history
+              </p>
+            </Link>
+
+            <Link 
+              href="/messages" 
+              className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
+            >
+              <div className="flex items-center justify-center w-12 h-12 bg-teal-100 dark:bg-teal-900 rounded-lg mb-4 group-hover:bg-teal-200 dark:group-hover:bg-teal-800 transition-colors">
+                <svg className="w-6 h-6 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Messages
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                Two-way SMS with patients
               </p>
             </Link>
             

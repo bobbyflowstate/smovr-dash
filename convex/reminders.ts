@@ -38,9 +38,14 @@ export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
 // Reminder attempt types, constants, and pure policy helpers live in reminder_policies.ts so we can unit test them.
 
+/** Extended result that includes the message body for logging */
+interface ReminderWebhookResult extends SMSWebhookResult {
+  messageBody?: string;
+}
+
 /**
  * Sends a 24h reminder webhook
- * @returns true if webhook was sent successfully, false otherwise
+ * @returns result with ok status and the message body for logging
  */
 async function sendReminder24hWebhook(
   appointmentId: Id<"appointments">,
@@ -49,7 +54,7 @@ async function sendReminder24hWebhook(
   appointmentDate: Date,
   timezone: string,
   hospitalAddress: string
-): Promise<SMSWebhookResult> {
+): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder24hWebhook", { appointmentId, patientPhone });
   
   try {
@@ -75,7 +80,8 @@ async function sendReminder24hWebhook(
     );
     
     // Send SMS webhook and return detailed status
-    return await sendSMSWebhookDetailed(patientPhone, message);
+    const result = await sendSMSWebhookDetailed(patientPhone, message);
+    return { ...result, messageBody: message };
   } catch (error) {
     log.error("Error preparing 24h reminder webhook", { error: error instanceof Error ? error.message : String(error) });
     return {
@@ -90,7 +96,7 @@ async function sendReminder24hWebhook(
 
 /**
  * Sends a 1h reminder webhook
- * @returns true if webhook was sent successfully, false otherwise
+ * @returns result with ok status and the message body for logging
  */
 async function sendReminder1hWebhook(
   appointmentId: Id<"appointments">,
@@ -99,7 +105,7 @@ async function sendReminder1hWebhook(
   appointmentDate: Date,
   timezone: string,
   hospitalAddress: string
-): Promise<SMSWebhookResult> {
+): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder1hWebhook", { appointmentId, patientPhone });
   
   try {
@@ -125,7 +131,8 @@ async function sendReminder1hWebhook(
     );
     
     // Send SMS webhook and return detailed status
-    return await sendSMSWebhookDetailed(patientPhone, message);
+    const result = await sendSMSWebhookDetailed(patientPhone, message);
+    return { ...result, messageBody: message };
   } catch (error) {
     log.error("Error preparing 1h reminder webhook", { error: error instanceof Error ? error.message : String(error) });
     return {
@@ -455,6 +462,22 @@ export const checkAndSendReminders = internalAction({
                     },
                     dedupMinutes: 5,
                   });
+                  // Log to conversation history
+                  if (result.messageBody) {
+                    try {
+                      await ctx.runMutation(internal.messages.createSystemMessageInternal, {
+                        teamId: appointment.teamId,
+                        patientId: appointment.patientId,
+                        appointmentId: appointment._id,
+                        phone: patient.phone,
+                        body: result.messageBody,
+                        messageType: "reminder_24h",
+                        status: "sent",
+                      });
+                    } catch (logErr) {
+                      log.warn("Failed to log 24h reminder to conversation", { error: String(logErr) });
+                    }
+                  }
                 } else {
                   const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
                   const status: ReminderAttemptStatus =
@@ -630,6 +653,22 @@ export const checkAndSendReminders = internalAction({
                     },
                     dedupMinutes: 5,
                   });
+                  // Log to conversation history
+                  if (result.messageBody) {
+                    try {
+                      await ctx.runMutation(internal.messages.createSystemMessageInternal, {
+                        teamId: appointment.teamId,
+                        patientId: appointment.patientId,
+                        appointmentId: appointment._id,
+                        phone: patient.phone,
+                        body: result.messageBody,
+                        messageType: "reminder_1h",
+                        status: "sent",
+                      });
+                    } catch (logErr) {
+                      log.warn("Failed to log 1h reminder to conversation", { error: String(logErr) });
+                    }
+                  }
                 } else {
                   const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
                   const status: ReminderAttemptStatus =
@@ -830,6 +869,23 @@ export const testCheckReminders = internalAction({
                     teamId: appointment.teamId,
                   });
                   
+                  // Log to conversation history
+                  if (result.messageBody) {
+                    try {
+                      await ctx.runMutation(internal.messages.createSystemMessageInternal, {
+                        teamId: appointment.teamId,
+                        patientId: appointment.patientId,
+                        appointmentId: appointment._id,
+                        phone: patient.phone,
+                        body: result.messageBody,
+                        messageType: "reminder_24h",
+                        status: "sent",
+                      });
+                    } catch (logErr) {
+                      log.warn("Failed to log 24h reminder to conversation", { error: String(logErr) });
+                    }
+                  }
+                  
                   remindersSent["24h"]++;
                   log.info("24h reminder sent and recorded", { appointmentId: appointment._id });
                 } else {
@@ -896,6 +952,23 @@ export const testCheckReminders = internalAction({
                     targetDate: appointment.dateTime,
                     teamId: appointment.teamId,
                   });
+                  
+                  // Log to conversation history
+                  if (result.messageBody) {
+                    try {
+                      await ctx.runMutation(internal.messages.createSystemMessageInternal, {
+                        teamId: appointment.teamId,
+                        patientId: appointment.patientId,
+                        appointmentId: appointment._id,
+                        phone: patient.phone,
+                        body: result.messageBody,
+                        messageType: "reminder_1h",
+                        status: "sent",
+                      });
+                    } catch (logErr) {
+                      log.warn("Failed to log 1h reminder to conversation", { error: String(logErr) });
+                    }
+                  }
                   
                   remindersSent["1h"]++;
                   log.info("1h reminder sent and recorded", { appointmentId: appointment._id });
