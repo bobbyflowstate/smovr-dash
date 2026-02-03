@@ -100,6 +100,7 @@ function TeamLogo({ teamId, teamName }: { teamId?: string | null; teamName?: str
       )}
       
       {imageState === 'loaded' && (
+        /* eslint-disable-next-line @next/next/no-img-element */
         <img
           ref={imgRef}
           src={`/${teamId}.png`}

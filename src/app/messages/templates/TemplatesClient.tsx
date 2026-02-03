@@ -256,7 +256,7 @@ export default function TemplatesClient({ teamName }: TemplatesClientProps) {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors resize-none"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Use {"{{patientName}}"} to insert the patient's name
+                Use {"{{patientName}}"} to insert the patient&apos;s name
               </p>
             </div>
             <div>
@@ -458,10 +458,10 @@ export default function TemplatesClient({ teamName }: TemplatesClientProps) {
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Template Placeholders</h3>
         <p className="text-sm text-blue-700 dark:text-blue-300">
-          You can use these placeholders in your templates - they'll be replaced with actual values when you send:
+          You can use these placeholders in your templates - they&apos;ll be replaced with actual values when you send:
         </p>
         <ul className="mt-2 text-sm text-blue-600 dark:text-blue-400 space-y-1">
-          <li><code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">{"{{patientName}}"}</code> - Patient's name</li>
+          <li><code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">{"{{patientName}}"}</code> - Patient&apos;s name</li>
           <li><code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">{"{{appointmentDate}}"}</code> - Appointment date</li>
           <li><code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">{"{{appointmentTime}}"}</code> - Appointment time</li>
         </ul>

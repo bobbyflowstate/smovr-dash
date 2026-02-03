@@ -91,7 +91,7 @@ export default async function ConversationWrapper({ patientId }: ConversationWra
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 transition-colors">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Patient Not Found</h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            This patient does not exist or you don't have access.
+            This patient does not exist or you don&apos;t have access.
           </p>
           <Link
             href="/messages"
