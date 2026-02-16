@@ -1,7 +1,8 @@
 /**
  * Server-side Convex admin client.
  *
- * Uses CONVEX_DEPLOY_KEY to authenticate, which allows calling
+ * Uses CONVEX_ADMIN_KEY (preferred) or CONVEX_DEPLOY_KEY to authenticate,
+ * which allows calling
  * internalMutation / internalQuery / internalAction from Next.js
  * API routes and server utilities.
  */
@@ -64,7 +65,7 @@ export type AdminConvexClient = ConvexHttpClient & InternalCallOverloads;
  * Returns an {@link AdminConvexClient} whose methods accept both `api.*` and
  * `internal.*` function references with full type safety.
  *
- * Requires the CONVEX_URL and CONVEX_DEPLOY_KEY environment variables.
+ * Requires the CONVEX_URL and either CONVEX_ADMIN_KEY or CONVEX_DEPLOY_KEY.
  */
 export function createAdminConvexClient(): AdminConvexClient {
   const url = process.env.CONVEX_URL;
@@ -72,15 +73,16 @@ export function createAdminConvexClient(): AdminConvexClient {
     throw new Error("CONVEX_URL environment variable is not set");
   }
 
-  const deployKey = process.env.CONVEX_DEPLOY_KEY;
-  if (!deployKey) {
+  const adminKey = process.env.CONVEX_ADMIN_KEY || process.env.CONVEX_DEPLOY_KEY;
+  if (!adminKey) {
     throw new Error(
-      "CONVEX_DEPLOY_KEY environment variable is not set — required for server-to-Convex internal calls"
+      "CONVEX_ADMIN_KEY (preferred) or CONVEX_DEPLOY_KEY is not set — required for server-to-Convex internal calls. " +
+      "For local Convex, set CONVEX_ADMIN_KEY to your local admin key."
     );
   }
 
   const client = new ConvexHttpClient(url);
-  client.setAdminAuth(deployKey);
+  client.setAdminAuth(adminKey);
 
   // The runtime object is a standard ConvexHttpClient — admin auth makes
   // internal calls succeed.  The cast only widens the *type* so callers

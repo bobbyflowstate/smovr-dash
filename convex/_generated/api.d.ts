@@ -21,6 +21,8 @@ import type * as reminder_logic from "../reminder_logic.js";
 import type * as reminder_policies from "../reminder_policies.js";
 import type * as reminders from "../reminders.js";
 import type * as smsConfig from "../smsConfig.js";
+import type * as sms_factory from "../sms_factory.js";
+import type * as sms_provider from "../sms_provider.js";
 import type * as teams from "../teams.js";
 import type * as users from "../users.js";
 import type * as webhook_utils from "../webhook_utils.js";
@@ -53,6 +55,8 @@ declare const fullApi: ApiFromModules<{
   reminder_policies: typeof reminder_policies;
   reminders: typeof reminders;
   smsConfig: typeof smsConfig;
+  sms_factory: typeof sms_factory;
+  sms_provider: typeof sms_provider;
   teams: typeof teams;
   users: typeof users;
   webhook_utils: typeof webhook_utils;
