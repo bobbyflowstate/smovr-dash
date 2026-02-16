@@ -1,8 +1,8 @@
 import { getLogtoContext } from '@logto/next/server-actions';
 import { logtoConfig } from '../../logto';
 import { NextRequest, NextResponse } from 'next/server';
-import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
+import { internal } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { extractDisplayName } from '@/lib/auth-utils';
 import {
@@ -14,8 +14,9 @@ import {
   recordBookingConfirmationAndMaybeSuppress,
 } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
+import { createAdminConvexClient } from '@/lib/convex-server';
 
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const convex = createAdminConvexClient();
 
 // GET /api/appointments - Get user's appointments
 export async function GET(request: NextRequest) {
@@ -188,6 +189,7 @@ export async function POST(request: NextRequest) {
       await recordBookingConfirmationAndMaybeSuppress({
         convex,
         api,
+        internalApi: internal,
         userEmail,
         appointmentId: result.appointmentId as Id<"appointments">,
         patientId: result.patientId as Id<"patients">,

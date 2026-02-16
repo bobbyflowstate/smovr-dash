@@ -11,14 +11,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLogtoContext } from '@logto/next/server-actions';
 import { logtoConfig } from '../../../logto';
-import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
+import { internal } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { getSMSProviderForTeam, getDefaultSMSProvider, resolveTemplatePlaceholders, type MessageContext } from '@/lib/sms';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { formatAppointmentDateTime } from '@/lib/webhook-utils';
+import { createAdminConvexClient } from '@/lib/convex-server';
+import { safeErrorMessage } from '@/lib/api-utils';
 
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const convex = createAdminConvexClient();
 
 export async function POST(request: NextRequest) {
   const ctx = createRequestContext({
@@ -139,7 +141,7 @@ export async function POST(request: NextRequest) {
       });
       
       // Update message status
-      await convex.mutation(api.messages.updateMessageStatus, {
+      await convex.mutation(internal.messages.updateMessageStatus, {
         messageId: messageId as Id<'messages'>,
         status: sendResult.success ? 'sent' : 'failed',
         providerMessageId: sendResult.messageId,
@@ -165,7 +167,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       log.error('Error sending SMS', error);
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Internal server error' },
+        { error: safeErrorMessage(error, 'Internal server error') },
         { status: 500 }
       );
     }

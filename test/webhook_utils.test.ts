@@ -110,14 +110,18 @@ describe("convex/webhook_utils (sendSMSWebhook)", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns false and does not call fetch when GHL_SMS_WEBHOOK_URL is not set", async () => {
+  it("falls back to mock provider (returns true) when no SMS env vars are set", async () => {
     delete process.env.GHL_SMS_WEBHOOK_URL;
+    delete process.env.TWILIO_ACCOUNT_SID;
+    delete process.env.TWILIO_AUTH_TOKEN;
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as any;
 
     const ok = await sendSMSWebhook("+15551234567", "hello");
 
-    expect(ok).toBe(false);
+    // Mock provider reports success (but logs a warning)
+    expect(ok).toBe(true);
+    // Mock provider does not call fetch
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

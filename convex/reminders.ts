@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult } from "./webhook_utils";
+import type { TeamSmsConfig } from "./sms_factory";
 import {
   REMINDER_WINDOWS_HOURS,
   getEligibleReminderRangesISO,
@@ -53,7 +54,8 @@ async function sendReminder24hWebhook(
   patientPhone: string,
   appointmentDate: Date,
   timezone: string,
-  hospitalAddress: string
+  hospitalAddress: string,
+  teamSmsConfig?: TeamSmsConfig | null,
 ): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder24hWebhook", { appointmentId, patientPhone });
   
@@ -79,8 +81,8 @@ async function sendReminder24hWebhook(
       hospitalAddress
     );
     
-    // Send SMS webhook and return detailed status
-    const result = await sendSMSWebhookDetailed(patientPhone, message);
+    // Send SMS via pluggable provider (team config → env fallback)
+    const result = await sendSMSWebhookDetailed(patientPhone, message, teamSmsConfig);
     return { ...result, messageBody: message };
   } catch (error) {
     log.error("Error preparing 24h reminder webhook", { error: error instanceof Error ? error.message : String(error) });
@@ -104,7 +106,8 @@ async function sendReminder1hWebhook(
   patientPhone: string,
   appointmentDate: Date,
   timezone: string,
-  hospitalAddress: string
+  hospitalAddress: string,
+  teamSmsConfig?: TeamSmsConfig | null,
 ): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder1hWebhook", { appointmentId, patientPhone });
   
@@ -130,8 +133,8 @@ async function sendReminder1hWebhook(
       hospitalAddress
     );
     
-    // Send SMS webhook and return detailed status
-    const result = await sendSMSWebhookDetailed(patientPhone, message);
+    // Send SMS via pluggable provider (team config → env fallback)
+    const result = await sendSMSWebhookDetailed(patientPhone, message, teamSmsConfig);
     return { ...result, messageBody: message };
   } catch (error) {
     log.error("Error preparing 1h reminder webhook", { error: error instanceof Error ? error.message : String(error) });
@@ -303,6 +306,7 @@ export const checkAndSendReminders = internalAction({
 
     // Process each appointment
     const teamCache = new Map<string, any>();
+    const smsConfigCache = new Map<string, TeamSmsConfig | null>();
     for (const appointment of allAppointments) {
       try {
         const appointmentDate = new Date(appointment.dateTime);
@@ -319,6 +323,21 @@ export const checkAndSendReminders = internalAction({
         }
         const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
         const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+
+        // Load team SMS config for provider selection
+        if (!smsConfigCache.has(teamIdStr)) {
+          const cfg = await ctx.runQuery(internal.smsConfig.getByTeamId, {
+            teamId: appointment.teamId,
+          });
+          smsConfigCache.set(teamIdStr, cfg ? {
+            provider: cfg.provider,
+            isEnabled: cfg.isEnabled,
+            webhookUrl: cfg.webhookUrl,
+            fromNumber: cfg.fromNumber,
+            credentialsEnvPrefix: cfg.credentialsEnvPrefix,
+          } as TeamSmsConfig : null);
+        }
+        const teamSmsConfig = smsConfigCache.get(teamIdStr) ?? null;
 
         const currentHour = getCurrentHourInTimezone(timezone);
         const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
@@ -435,7 +454,8 @@ export const checkAndSendReminders = internalAction({
                   patient.phone,
                   appointmentDate,
                   timezone,
-                  hospitalAddress
+                  hospitalAddress,
+                  teamSmsConfig,
                 );
 
                 if (result.ok) {
@@ -626,7 +646,8 @@ export const checkAndSendReminders = internalAction({
                   patient.phone,
                   appointmentDate,
                   timezone,
-                  hospitalAddress
+                  hospitalAddress,
+                  teamSmsConfig,
                 );
 
                 if (result.ok) {
@@ -800,6 +821,7 @@ export const testCheckReminders = internalAction({
 
       // Process each appointment
       const teamCache = new Map<string, any>();
+      const smsConfigCache2 = new Map<string, TeamSmsConfig | null>();
       for (const appointment of allAppointments) {
         try {
           const appointmentDate = new Date(appointment.dateTime);
@@ -814,6 +836,21 @@ export const testCheckReminders = internalAction({
           }
           const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
           const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+
+          // Load team SMS config for provider selection
+          if (!smsConfigCache2.has(teamIdStr)) {
+            const cfg = await ctx.runQuery(internal.smsConfig.getByTeamId, {
+              teamId: appointment.teamId,
+            });
+            smsConfigCache2.set(teamIdStr, cfg ? {
+              provider: cfg.provider,
+              isEnabled: cfg.isEnabled,
+              webhookUrl: cfg.webhookUrl,
+              fromNumber: cfg.fromNumber,
+              credentialsEnvPrefix: cfg.credentialsEnvPrefix,
+            } as TeamSmsConfig : null);
+          }
+          const teamSmsConfig = smsConfigCache2.get(teamIdStr) ?? null;
 
           const currentHour = getCurrentHourInTimezone(timezone);
           const inQuietHours = isInQuietHours(currentHour, DEFAULT_QUIET_HOURS_START, DEFAULT_QUIET_HOURS_END);
@@ -856,7 +893,8 @@ export const testCheckReminders = internalAction({
                   patient.phone,
                   appointmentDate,
                   timezone,
-                  hospitalAddress
+                  hospitalAddress,
+                  teamSmsConfig,
                 );
 
                 // Only record reminder if it was sent successfully
@@ -940,7 +978,8 @@ export const testCheckReminders = internalAction({
                   patient.phone,
                   appointmentDate,
                   timezone,
-                  hospitalAddress
+                  hospitalAddress,
+                  teamSmsConfig,
                 );
 
                 // Only record reminder if it was sent successfully
@@ -1353,7 +1392,8 @@ export const recordReminderSent = internalMutation({
 });
 
 /**
- * PUBLIC Mutation: Mark 24h reminder as "sent" if appointment is booked within the 24h window.
+ * Mark 24h reminder as "sent" if appointment is booked within the 24h window.
+ * Internal-only: called from the appointments API after booking.
  * 
  * This prevents double-notification when a user books within the 24h window:
  * - They get a schedule confirmation immediately
@@ -1361,10 +1401,8 @@ export const recordReminderSent = internalMutation({
  * 
  * By recording the 24h reminder as "sent" at booking time, the cron's
  * `getReminderSentRecord` returns a record and skips the reminder.
- * 
- * Called from the appointments API after creating an appointment.
  */
-export const markReminderSentIfInWindow = mutation({
+export const markReminderSentIfInWindow = internalMutation({
   args: {
     appointmentId: v.id("appointments"),
     patientId: v.id("patients"),

@@ -14,17 +14,17 @@ export class MockSMSProvider implements SMSProvider {
     const timestamp = new Date().toISOString();
     const messageId = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('📱 [MOCK SMS] Outbound Message');
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log(`  To:        ${params.to}`);
-    console.log(`  From:      ${params.from || '(default)'}`);
-    console.log(`  Timestamp: ${timestamp}`);
-    console.log(`  MessageID: ${messageId}`);
-    console.log('───────────────────────────────────────────────────────────');
-    console.log(`  Body:`);
-    console.log(`  ${params.body.split('\n').join('\n  ')}`);
-    console.log('═══════════════════════════════════════════════════════════');
+    console.warn('═══════════════════════════════════════════════════════════');
+    console.warn('[MOCK SMS - NOT DELIVERED] Outbound Message');
+    console.warn('═══════════════════════════════════════════════════════════');
+    console.warn(`  To:        ${params.to}`);
+    console.warn(`  From:      ${params.from || '(default)'}`);
+    console.warn(`  Timestamp: ${timestamp}`);
+    console.warn(`  MessageID: ${messageId}`);
+    console.warn('───────────────────────────────────────────────────────────');
+    console.warn(`  Body:`);
+    console.warn(`  ${params.body.split('\n').join('\n  ')}`);
+    console.warn('═══════════════════════════════════════════════════════════');
     
     return {
       success: true,

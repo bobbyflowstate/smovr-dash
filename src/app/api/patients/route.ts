@@ -5,6 +5,7 @@ import { getUserIdentifier } from '@/lib/auth-utils';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
+import { safeErrorMessage } from '@/lib/api-utils';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 
@@ -91,8 +92,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     console.error('Error creating patient:', error);
-    const message = error instanceof Error ? error.message : 'Failed to create patient';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: safeErrorMessage(error, 'Failed to create patient') },
+      { status: 500 }
+    );
   }
 }
 
@@ -134,8 +137,10 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error updating patient:', error);
-    const message = error instanceof Error ? error.message : 'Failed to update patient';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: safeErrorMessage(error, 'Failed to update patient') },
+      { status: 500 }
+    );
   }
 }
 
@@ -173,7 +178,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting patient:', error);
-    const message = error instanceof Error ? error.message : 'Failed to delete patient';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: safeErrorMessage(error, 'Failed to delete patient') },
+      { status: 500 }
+    );
   }
 }

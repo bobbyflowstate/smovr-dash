@@ -216,9 +216,10 @@ export const createOutboundMessage = mutation({
 });
 
 /**
- * Update message status after send attempt
+ * Update message status after send attempt.
+ * Internal-only: called from the Next.js send API route.
  */
-export const updateMessageStatus = mutation({
+export const updateMessageStatus = internalMutation({
   args: {
     messageId: v.id("messages"),
     status: v.union(
@@ -271,9 +272,10 @@ export const updateMessageStatus = mutation({
 // ============================================
 
 /**
- * Record an inbound message (called from webhook)
+ * Record an inbound message.
+ * Internal-only: called from the inbound SMS webhook handler.
  */
-export const createInboundMessage = mutation({
+export const createInboundMessage = internalMutation({
   args: {
     teamId: v.id("teams"),
     phone: v.string(),
@@ -367,60 +369,8 @@ export const markConversationRead = mutation({
 // ============================================
 
 /**
- * Record a system-generated outbound message (booking confirmation, cancellation, reminder)
- * This doesn't require user authentication since it's called by automated processes.
- */
-export const createSystemMessage = mutation({
-  args: {
-    teamId: v.id("teams"),
-    patientId: v.id("patients"),
-    appointmentId: v.optional(v.id("appointments")),
-    phone: v.string(),
-    body: v.string(),
-    messageType: v.string(), // "booking_confirmation", "cancellation", "reminder_24h", "reminder_1h"
-    status: v.union(v.literal("sent"), v.literal("failed")),
-    providerMessageId: v.optional(v.string()),
-    errorMessage: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const log = createMutationLogger("messages.createSystemMessage", {
-      teamId: args.teamId,
-      patientId: args.patientId,
-      messageType: args.messageType,
-    });
-    
-    const now = new Date().toISOString();
-    
-    // Create message record
-    const messageId = await ctx.db.insert("messages", {
-      teamId: args.teamId,
-      patientId: args.patientId,
-      appointmentId: args.appointmentId,
-      direction: "outbound",
-      body: args.body,
-      phone: args.phone,
-      status: args.status,
-      createdAt: now,
-      sentAt: args.status === "sent" ? now : undefined,
-      providerMessageId: args.providerMessageId,
-      errorMessage: args.errorMessage,
-      // No sentByUserId/sentByEmail for system messages
-    });
-    
-    // Update conversation
-    if (args.status === "sent") {
-      await upsertConversationForOutbound(ctx, args.teamId, args.patientId, args.phone, args.body);
-    }
-    
-    log.info("Created system message", { messageId, messageType: args.messageType });
-    
-    return { messageId };
-  },
-});
-
-/**
- * Internal mutation for creating system messages (for use by crons/internal actions)
- * Same as createSystemMessage but callable from internal actions
+ * Record a system-generated outbound message (booking confirmation, cancellation, reminder).
+ * Internal-only: called from cron jobs, internal actions, and server-side utilities.
  */
 export const createSystemMessageInternal = internalMutation({
   args: {

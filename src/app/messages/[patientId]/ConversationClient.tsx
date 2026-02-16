@@ -88,6 +88,8 @@ export default function ConversationClient({
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevCountRef = useRef(0);
+  const shouldScrollRef = useRef(false);
 
   // Fetch messages
   useEffect(() => {
@@ -95,8 +97,15 @@ export default function ConversationClient({
       try {
         const response = await fetch(`/api/messages?patientId=${patientId}`);
         if (response.ok) {
-          const data = await response.json();
-          setMessages(data);
+          const data: Message[] = await response.json();
+          setMessages((prev) => {
+            const serverIds = new Set(data.map((m) => m._id));
+            // Keep optimistic messages whose ID isn't in the server response yet
+            const pending = prev.filter(
+              (m) => m._id.startsWith("temp-") && !serverIds.has(m._id)
+            );
+            return [...data, ...pending];
+          });
         }
       } catch (error) {
         console.error("Error fetching messages:", error);
@@ -129,9 +138,13 @@ export default function ConversationClient({
     fetchTemplates();
   }, []);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom only when new messages arrive or after sending
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length > prevCountRef.current || shouldScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      shouldScrollRef.current = false;
+    }
+    prevCountRef.current = messages.length;
   }, [messages]);
 
   // Auto-resize textarea
@@ -164,8 +177,9 @@ export default function ConversationClient({
         throw new Error(data.error || "Failed to send message");
       }
 
-      // Clear input and refresh messages
+      // Clear input and scroll to the new message
       setMessageText("");
+      shouldScrollRef.current = true;
       
       // Optimistically add the message
       const optimisticMessage: Message = {

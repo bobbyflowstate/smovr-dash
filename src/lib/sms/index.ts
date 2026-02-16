@@ -5,9 +5,9 @@
  * and returns the appropriate provider instance.
  */
 
-import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../../../convex/_generated/api';
+import { internal } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
+import type { AdminConvexClient } from '@/lib/convex-server';
 
 import type { SMSProvider, SMSProviderConfig, SendResult, InboundMessage } from './types';
 import { MockSMSProvider } from './providers/mock';
@@ -31,12 +31,12 @@ export { TwilioProvider, createTwilioFromEnv, createTwilioFromGlobalEnv } from '
  * appropriate provider instance with credentials loaded from env vars.
  */
 export async function getSMSProviderForTeam(
-  convex: ConvexHttpClient,
+  convex: AdminConvexClient,
   teamId: Id<'teams'>
 ): Promise<SMSProvider | null> {
   try {
-    // Get team's SMS config from Convex
-    const config = await convex.query(api.smsConfig.getByTeamId, { teamId });
+    // Get team's SMS config from Convex (internal query)
+    const config = await convex.query(internal.smsConfig.getByTeamId, { teamId });
     
     if (!config || !config.isEnabled) {
       console.log(`[SMS] No SMS config or disabled for team ${teamId}`);
@@ -120,7 +120,17 @@ export function getDefaultSMSProvider(): SMSProvider {
     return new GHLProvider(ghlWebhookUrl);
   }
   
-  console.log('[SMS] No SMS provider configured, using mock provider');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      '[SMS] FATAL: No SMS provider configured in production. ' +
+      'Set TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN or GHL_SMS_WEBHOOK_URL.'
+    );
+  }
+
+  console.warn(
+    '[SMS] WARNING: No SMS provider configured — messages will NOT be delivered. ' +
+    'Set TWILIO_* or GHL_SMS_WEBHOOK_URL env vars.'
+  );
   return new MockSMSProvider();
 }
 
@@ -134,7 +144,7 @@ export function getDefaultSMSProvider(): SMSProvider {
  * Returns null if team has no SMS configuration.
  */
 export async function sendSMSForTeam(
-  convex: ConvexHttpClient,
+  convex: AdminConvexClient,
   teamId: Id<'teams'>,
   to: string,
   body: string

@@ -1,6 +1,7 @@
-import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
+import { internal } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
+import type { AdminConvexClient } from '@/lib/convex-server';
 import {
   formatScheduleMessage,
   formatCancelMessage,
@@ -11,17 +12,30 @@ import {
 // Re-export for use in other parts of the app
 export { formatAppointmentDateTime } from '../../convex/webhook_utils';
 import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
-import { getDefaultSMSProvider } from '@/lib/sms';
+import { getSMSProviderForTeam, getDefaultSMSProvider } from '@/lib/sms';
 
 const FALLBACK_HOSPITAL_ADDRESS =
   process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
 
 /**
- * Send SMS using the new provider abstraction
- * Converts the new SendResult to the old SMSWebhookResult format for backwards compatibility
+ * Send SMS using the team-based provider abstraction, falling back to the
+ * default env-based provider when team config is unavailable.
+ * Converts SendResult to the legacy SMSWebhookResult format.
  */
-async function sendSMSWithProvider(phone: string, message: string): Promise<SMSWebhookResult> {
-  const provider = getDefaultSMSProvider();
+async function sendSMSWithProvider(
+  convex: AdminConvexClient,
+  teamId: Id<"teams"> | null,
+  phone: string,
+  message: string,
+): Promise<SMSWebhookResult> {
+  let provider = teamId
+    ? await getSMSProviderForTeam(convex, teamId)
+    : null;
+
+  if (!provider) {
+    provider = getDefaultSMSProvider();
+  }
+
   const result = await provider.sendMessage({ to: phone, body: message });
   
   // Convert to legacy format
@@ -39,7 +53,7 @@ async function sendSMSWithProvider(phone: string, message: string): Promise<SMSW
  * Also logs the message to the conversation history
  */
 export async function sendScheduleWebhook(
-  convex: ConvexHttpClient,
+  convex: AdminConvexClient,
   appointmentId: Id<"appointments">,
   patientId: Id<"patients">,
   phone: string,
@@ -96,12 +110,12 @@ export async function sendScheduleWebhook(
       hospitalAddress
     );
     
-    // Send SMS using provider abstraction
-    const result = await sendSMSWithProvider(phone, message);
+    // Send SMS using team-based provider abstraction
+    const result = await sendSMSWithProvider(convex, teamId, phone, message);
     
     // Log to conversation history
     try {
-      await convex.mutation(api.messages.createSystemMessage, {
+      await convex.mutation(internal.messages.createSystemMessageInternal, {
         teamId: appointment.teamId,
         patientId,
         appointmentId,
@@ -136,7 +150,7 @@ export async function sendScheduleWebhook(
  * Also logs the message to the conversation history
  */
 export async function sendCancelWebhook(
-  convex: ConvexHttpClient,
+  convex: AdminConvexClient,
   appointmentId: Id<"appointments">,
   patientId: Id<"patients">,
   phone: string,
@@ -162,13 +176,14 @@ export async function sendCancelWebhook(
     // Format message using shared formatter
     const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress);
     
-    // Send SMS using provider abstraction
-    const result = await sendSMSWithProvider(phone, message);
+    // Send SMS using team-based provider abstraction
+    const teamId = appointment?.teamId ?? null;
+    const result = await sendSMSWithProvider(convex, teamId, phone, message);
     
     // Log to conversation history
     if (appointment) {
       try {
-        await convex.mutation(api.messages.createSystemMessage, {
+        await convex.mutation(internal.messages.createSystemMessageInternal, {
           teamId: appointment.teamId,
           patientId,
           appointmentId,

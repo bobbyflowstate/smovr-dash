@@ -1,14 +1,14 @@
 import { getLogtoContext } from '@logto/next/server-actions';
 import { logtoConfig } from '../../../logto';
 import { NextRequest, NextResponse } from 'next/server';
-import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { sendCancelWebhook } from '@/lib/webhook-utils';
 import { recordCancellationSmsAttempt } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
+import { createAdminConvexClient } from '@/lib/convex-server';
 
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const convex = createAdminConvexClient();
 
 // GET /api/appointments/[id] - Get appointment details (authenticated)
 export async function GET(

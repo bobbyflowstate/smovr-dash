@@ -4,14 +4,15 @@
  * Manages per-team SMS provider settings.
  */
 
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { createQueryLogger, createMutationLogger } from "./lib/logger";
 
 /**
- * Get SMS configuration for a team
+ * Get SMS configuration for a team.
+ * Internal-only: called from server-side code (webhook handler, provider factory).
  */
-export const getByTeamId = query({
+export const getByTeamId = internalQuery({
   args: {
     teamId: v.id("teams"),
   },
@@ -29,7 +30,8 @@ export const getByTeamId = query({
 });
 
 /**
- * Get SMS configuration for the current user's team
+ * Get SMS configuration for the current user's team.
+ * Secrets (inboundWebhookSecret) are redacted — only a boolean flag is exposed.
  */
 export const getForCurrentUser = query({
   args: {
@@ -54,8 +56,19 @@ export const getForCurrentUser = query({
       .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
       .first();
     
-    log.debug("Fetched SMS config for user", { found: !!config, teamId: user.teamId });
-    return config;
+    if (!config) {
+      log.debug("No SMS config for user", { teamId: user.teamId });
+      return null;
+    }
+
+    log.debug("Fetched SMS config for user", { found: true, teamId: user.teamId });
+
+    // Redact secrets — clients only need to know whether a secret is configured
+    const { inboundWebhookSecret, ...safe } = config;
+    return {
+      ...safe,
+      hasWebhookSecret: !!inboundWebhookSecret,
+    };
   },
 });
 

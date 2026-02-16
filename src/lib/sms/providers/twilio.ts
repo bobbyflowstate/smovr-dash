@@ -131,22 +131,48 @@ export class TwilioProvider implements SMSProvider {
   }
   
   async verifyWebhookSignature(request: Request, secret: string): Promise<boolean> {
-    // Twilio uses X-Twilio-Signature header for webhook verification
-    // This requires the full URL and request body
-    // For production, implement proper signature validation:
+    // Twilio signs webhooks with HMAC-SHA1(authToken, url + sorted POST params)
     // https://www.twilio.com/docs/usage/security#validating-requests
-    
     const signature = request.headers.get('X-Twilio-Signature');
     if (!signature) {
       console.warn('[Twilio] No X-Twilio-Signature header present');
       return false;
     }
-    
-    // TODO: Implement proper Twilio signature validation
-    // For now, just check that a signature exists
-    console.log('[Twilio] Webhook signature present (full validation not implemented)');
-    void secret;
-    return true;
+
+    try {
+      const url = request.url;
+      const body = await request.text();
+      const params = new URLSearchParams(body);
+
+      // Build the validation string: URL + sorted param key-value pairs
+      let dataToSign = url;
+      const sortedKeys = Array.from(params.keys()).sort();
+      for (const key of sortedKeys) {
+        dataToSign += key + params.get(key);
+      }
+
+      const { createHmac, timingSafeEqual } = await import('crypto');
+      const expected = createHmac('sha1', secret)
+        .update(dataToSign, 'utf-8')
+        .digest('base64');
+
+      const sigBuf = Buffer.from(signature, 'base64');
+      const expectedBuf = Buffer.from(expected, 'base64');
+
+      if (sigBuf.length !== expectedBuf.length) {
+        console.warn('[Twilio] Webhook signature length mismatch');
+        return false;
+      }
+
+      const valid = timingSafeEqual(sigBuf, expectedBuf);
+      if (!valid) {
+        console.warn('[Twilio] Webhook signature mismatch');
+      }
+      return valid;
+    } catch (error) {
+      console.error('[Twilio] Error verifying webhook signature:', error);
+      return false;
+    }
   }
 }
 

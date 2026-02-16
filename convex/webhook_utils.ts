@@ -9,29 +9,12 @@
  */
 
 import { Id } from "./_generated/dataModel";
-
-// Webhook timeout constant (in milliseconds)
-const WEBHOOK_TIMEOUT_MS = 10000; // 10 seconds
-
-// Retry configuration
-const MAX_RETRIES = 3;
-const INITIAL_BACKOFF_MS = 500; // doubles each retry: 500ms, 1s, 2s
-
-/** Sleep helper for backoff delays */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Check if an HTTP status code should trigger a retry */
-function isRetryableStatus(status: number): boolean {
-  // Retry on server errors (5xx) and rate limiting (429)
-  return status >= 500 || status === 429;
-}
-
-interface SMSWebhookPayload {
-  phone: string;
-  message: string;
-}
+import {
+  createProviderFromConfig,
+  getDefaultProvider,
+  type TeamSmsConfig,
+} from "./sms_factory";
+import type { SendResult } from "./sms_provider";
 
 export type SMSWebhookFailureReason =
   | "WEBHOOK_URL_NOT_CONFIGURED"
@@ -112,140 +95,61 @@ function getTimezoneLabelShort(timezone: string): string {
   }
 }
 
-/**
- * Unified webhook function that sends SMS message to GoHighLevel
- * Includes automatic retry with exponential backoff for transient failures.
- * 
- * @returns true if webhook was sent successfully, false otherwise
- */
-export async function sendSMSWebhook(phone: string, message: string): Promise<boolean> {
-  const result = await sendSMSWebhookDetailed(phone, message);
-  return result.ok;
+/** Convert a provider SendResult to the legacy SMSWebhookResult */
+function toWebhookResult(r: SendResult): SMSWebhookResult {
+  if (r.success) {
+    return {
+      ok: true,
+      attemptCount: r.attemptCount,
+      httpStatus: r.httpStatus ?? null,
+      failureReason: null,
+      errorMessage: null,
+    };
+  }
+  const failMap: Record<string, SMSWebhookFailureReason> = {
+    HTTP_ERROR: "HTTP_NON_RETRYABLE",
+    TIMEOUT: "TIMEOUT",
+    RATE_LIMITED: "HTTP_RETRY_EXHAUSTED",
+  };
+  return {
+    ok: false,
+    attemptCount: r.attemptCount,
+    httpStatus: r.httpStatus ?? null,
+    failureReason: failMap[r.failureReason ?? ""] ?? "NETWORK_ERROR",
+    errorMessage: r.error ?? null,
+  };
 }
 
 /**
- * Detailed variant of sendSMSWebhook that returns a structured result.
- * This is useful for durable logging and debugging when SMS messages aren't sent.
+ * Send an SMS through the pluggable provider system.
+ *
+ * Backwards-compatible: if no `teamConfig` is supplied the provider is
+ * resolved from environment variables (Twilio -> GHL -> Mock), which is
+ * the same behaviour as the previous GHL-only implementation.
  */
-export async function sendSMSWebhookDetailed(phone: string, message: string): Promise<SMSWebhookResult> {
-  const webhookUrl = process.env.GHL_SMS_WEBHOOK_URL;
-  
-  if (!webhookUrl) {
-    console.log('GHL_SMS_WEBHOOK_URL not configured, skipping SMS webhook');
-    return {
-      ok: false,
-      attemptCount: 0,
-      httpStatus: null,
-      failureReason: "WEBHOOK_URL_NOT_CONFIGURED",
-      errorMessage: null,
-    };
-  }
+export async function sendSMSWebhookDetailed(
+  phone: string,
+  message: string,
+  teamConfig?: TeamSmsConfig | null,
+): Promise<SMSWebhookResult> {
+  const provider = teamConfig
+    ? createProviderFromConfig(teamConfig) ?? getDefaultProvider()
+    : getDefaultProvider();
 
-  const payload: SMSWebhookPayload = { phone, message };
-  let lastError: Error | null = null;
-  let lastStatus: number | null = null;
+  const result = await provider.sendMessage({ to: phone, body: message });
+  return toWebhookResult(result);
+}
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    // Apply backoff delay before retries (not on first attempt)
-    if (attempt > 0) {
-      const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
-      console.log(`SMS webhook retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms backoff`);
-      await sleep(backoffMs);
-    }
-
-    // Create abort controller for webhook timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-
-    try {
-      if (attempt === 0) {
-        console.log('Sending SMS webhook to:', webhookUrl);
-        console.log('SMS webhook payload:', payload);
-      }
-
-      const webhookResponse = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (webhookResponse.ok) {
-        if (attempt > 0) {
-          console.log(`SMS webhook sent successfully on retry ${attempt}`);
-        } else {
-          console.log('SMS webhook sent successfully');
-        }
-        return {
-          ok: true,
-          attemptCount: attempt + 1,
-          httpStatus: webhookResponse.status,
-          failureReason: null,
-          errorMessage: null,
-        };
-      }
-
-      // Check if we should retry this status code
-      lastStatus = webhookResponse.status;
-      if (!isRetryableStatus(webhookResponse.status)) {
-        // 4xx errors won't succeed on retry - fail immediately
-        console.error(`SMS webhook failed with non-retryable status: ${webhookResponse.status}`);
-        return {
-          ok: false,
-          attemptCount: attempt + 1,
-          httpStatus: webhookResponse.status,
-          failureReason: "HTTP_NON_RETRYABLE",
-          errorMessage: null,
-        };
-      }
-
-      console.warn(`SMS webhook failed with retryable status: ${webhookResponse.status}`);
-      // Continue to next retry attempt
-    } catch (webhookError) {
-      clearTimeout(timeoutId);
-      lastError = webhookError instanceof Error ? webhookError : new Error(String(webhookError));
-
-      if (lastError.name === 'AbortError') {
-        console.warn(`SMS webhook request timed out (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
-      } else {
-        console.warn(`SMS webhook error (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, lastError.message);
-      }
-      // Continue to next retry attempt
-    }
-  }
-
-  // All retries exhausted
-  if (lastError) {
-    console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last error:`, lastError.message);
-    return {
-      ok: false,
-      attemptCount: MAX_RETRIES + 1,
-      httpStatus: lastStatus,
-      failureReason: lastError.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
-      errorMessage: lastError.message,
-    };
-  } else if (lastStatus) {
-    console.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts. Last status: ${lastStatus}`);
-    return {
-      ok: false,
-      attemptCount: MAX_RETRIES + 1,
-      httpStatus: lastStatus,
-      failureReason: "HTTP_RETRY_EXHAUSTED",
-      errorMessage: null,
-    };
-  }
-
-  return {
-    ok: false,
-    attemptCount: MAX_RETRIES + 1,
-    httpStatus: null,
-    failureReason: "NETWORK_ERROR",
-    errorMessage: null,
-  };
+/**
+ * Convenience wrapper that returns a simple boolean.
+ */
+export async function sendSMSWebhook(
+  phone: string,
+  message: string,
+  teamConfig?: TeamSmsConfig | null,
+): Promise<boolean> {
+  const result = await sendSMSWebhookDetailed(phone, message, teamConfig);
+  return result.ok;
 }
 
 /**

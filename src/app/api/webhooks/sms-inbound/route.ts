@@ -4,23 +4,46 @@
  * Receives inbound SMS messages from SMS providers (GHL, Twilio, etc.)
  * and stores them in the messages table.
  * 
- * Routes:
- * - POST /api/webhooks/sms-inbound?provider=ghl&team=TEAM_ID
- * - POST /api/webhooks/sms-inbound?provider=twilio&team=TEAM_ID
- * - POST /api/webhooks/sms-inbound?provider=mock&team=TEAM_ID
+ * POST /api/webhooks/sms-inbound?provider=ghl&team=TEAM_ID
+ * POST /api/webhooks/sms-inbound?provider=twilio&team=TEAM_ID
  * 
  * The team parameter is required to route the message to the correct team.
- * In production, you may want to use a secret token in the URL for security.
+ * If the team has an inboundWebhookSecret configured, the provider's
+ * webhook signature is verified before processing.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../../../../../convex/_generated/api';
+import { internal } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { parseInboundWebhook } from '@/lib/sms';
+import { parseInboundWebhook, GHLProvider, TwilioProvider, MockSMSProvider } from '@/lib/sms';
+import type { SMSProvider, SMSProviderConfig } from '@/lib/sms';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
+import { createAdminConvexClient } from '@/lib/convex-server';
 
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const convex = createAdminConvexClient();
+
+/**
+ * Build a lightweight provider instance for signature verification only.
+ * Full credentials are not needed — just the class that implements
+ * verifyWebhookSignature for the right provider type.
+ */
+function getProviderForVerification(providerType: SMSProviderConfig['provider']): SMSProvider | null {
+  switch (providerType) {
+    case 'twilio':
+      // Minimal instance — sendMessage is not called
+      return new TwilioProvider({
+        accountSid: 'unused',
+        authToken: 'unused',
+        fromNumber: '+10000000000',
+      });
+    case 'ghl':
+      return new GHLProvider('unused-for-verification');
+    case 'mock':
+      return new MockSMSProvider();
+    default:
+      return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   const ctx = createRequestContext({
@@ -63,6 +86,24 @@ export async function POST(request: NextRequest) {
       extendContext({ teamId });
       
       log.info('Processing inbound SMS webhook', { provider, teamId });
+
+      // --- Webhook signature verification ---
+      const smsConfig = await convex.query(internal.smsConfig.getByTeamId, { teamId });
+      const webhookSecret = smsConfig?.inboundWebhookSecret;
+
+      if (webhookSecret) {
+        const verifier = getProviderForVerification(provider);
+        if (verifier?.verifyWebhookSignature) {
+          // Clone so the body can be read again for parsing
+          const verifyClone = request.clone();
+          const valid = await verifier.verifyWebhookSignature(verifyClone, webhookSecret);
+          if (!valid) {
+            log.warn('Webhook signature verification failed', { provider, teamId });
+            return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
+          }
+          log.info('Webhook signature verified');
+        }
+      }
       
       // Clone the request since we need to read the body
       const clonedRequest = request.clone();
@@ -84,7 +125,7 @@ export async function POST(request: NextRequest) {
       });
       
       // Store the message in Convex
-      const result = await convex.mutation(api.messages.createInboundMessage, {
+      const result = await convex.mutation(internal.messages.createInboundMessage, {
         teamId,
         phone: inboundMessage.phone,
         body: inboundMessage.body,
@@ -121,14 +162,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-
-// Handle GET requests with a helpful message
-export async function GET() {
-  return NextResponse.json({
-    message: 'Inbound SMS Webhook',
-    usage: 'POST /api/webhooks/sms-inbound?provider=<provider>&team=<teamId>',
-    providers: ['ghl', 'twilio', 'vonage', 'mock'],
-    example: 'POST /api/webhooks/sms-inbound?provider=ghl&team=abc123',
-  });
-}
-

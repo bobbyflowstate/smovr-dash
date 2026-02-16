@@ -150,12 +150,29 @@ export class GHLProvider implements SMSProvider {
   }
   
   async verifyWebhookSignature(request: Request, secret: string): Promise<boolean> {
-    // GHL doesn't typically use webhook signatures
-    // If you configure a secret token in the URL, that's handled at the route level
-    // For now, accept all requests
-    void request;
-    void secret;
-    return true;
+    // GHL has no standard signature scheme. When an inboundWebhookSecret
+    // is configured we require the caller to pass it in an X-Webhook-Secret
+    // header (set this in the GHL workflow HTTP action).
+    const header = request.headers.get('X-Webhook-Secret');
+    if (!header) {
+      console.warn('[GHL] Missing X-Webhook-Secret header');
+      return false;
+    }
+
+    try {
+      const { timingSafeEqual } = await import('crypto');
+      const valid = timingSafeEqual(
+        Buffer.from(header, 'utf-8'),
+        Buffer.from(secret, 'utf-8'),
+      );
+      if (!valid) {
+        console.warn('[GHL] X-Webhook-Secret mismatch');
+      }
+      return valid;
+    } catch {
+      console.warn('[GHL] X-Webhook-Secret mismatch');
+      return false;
+    }
   }
 }
 
