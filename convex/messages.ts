@@ -19,6 +19,7 @@ export const getConversations = query({
   args: {
     userEmail: v.string(),
     limit: v.optional(v.number()),
+    beforeLastMessageAt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const log = createQueryLogger("messages.getConversations", { userEmail: args.userEmail });
@@ -35,22 +36,24 @@ export const getConversations = query({
     }
     
     const teamId = user.teamId;
-    const limit = args.limit || 50;
-    
-    // Get conversations ordered by most recent message
-    const conversations = await ctx.db
-      .query("conversations")
-      .withIndex("by_team", (q) => q.eq("teamId", teamId))
-      .order("desc")
-      .take(limit);
-    
-    // Sort by lastMessageAt descending
-    const sorted = conversations.sort((a, b) => 
-      new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
-    );
-    
-    log.debug("Fetched conversations", { count: sorted.length, teamId });
-    return sorted;
+    const limit = Math.max(1, Math.min(args.limit || 50, 200));
+
+    const conversations = args.beforeLastMessageAt
+      ? await ctx.db
+          .query("conversations")
+          .withIndex("by_team_lastMessage", (q) =>
+            q.eq("teamId", teamId).lt("lastMessageAt", args.beforeLastMessageAt!)
+          )
+          .order("desc")
+          .take(limit)
+      : await ctx.db
+          .query("conversations")
+          .withIndex("by_team_lastMessage", (q) => q.eq("teamId", teamId))
+          .order("desc")
+          .take(limit);
+
+    log.debug("Fetched conversations", { count: conversations.length, teamId, limit });
+    return conversations;
   },
 });
 
@@ -62,6 +65,7 @@ export const getMessagesForPatient = query({
     userEmail: v.string(),
     patientId: v.id("patients"),
     limit: v.optional(v.number()),
+    beforeMessageCreatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const log = createQueryLogger("messages.getMessagesForPatient", { 
@@ -87,14 +91,27 @@ export const getMessagesForPatient = query({
       return [];
     }
     
-    const limit = args.limit || 100;
-    
-    // Get messages for this patient
-    const messages = await ctx.db
-      .query("messages")
-      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
-      .order("asc")
-      .take(limit);
+    const limit = Math.max(1, Math.min(args.limit || 100, 200));
+
+    // Get newest messages first. Use _creationTime cursor for pagination.
+    const messages = args.beforeMessageCreatedAt
+      ? await ctx.db
+          .query("messages")
+          .withIndex("by_team_patient", (q) =>
+            q
+              .eq("teamId", user.teamId)
+              .eq("patientId", args.patientId)
+              .lt("_creationTime", args.beforeMessageCreatedAt!)
+          )
+          .order("desc")
+          .take(limit)
+      : await ctx.db
+          .query("messages")
+          .withIndex("by_team_patient", (q) =>
+            q.eq("teamId", user.teamId).eq("patientId", args.patientId)
+          )
+          .order("desc")
+          .take(limit);
     
     // Enrich with sender info for outbound messages
     const enriched = await Promise.all(
@@ -111,7 +128,11 @@ export const getMessagesForPatient = query({
       })
     );
     
-    log.debug("Fetched messages for patient", { count: enriched.length, patientId: args.patientId });
+    log.debug("Fetched messages for patient", {
+      count: enriched.length,
+      patientId: args.patientId,
+      limit,
+    });
     return enriched;
   },
 });

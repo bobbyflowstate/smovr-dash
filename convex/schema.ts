@@ -168,7 +168,6 @@ export default defineSchema({
     provider: v.union(
       v.literal("ghl"), // GoHighLevel (webhook-based)
       v.literal("twilio"), // Twilio (API-based)
-      v.literal("vonage"), // Vonage (API-based)
       v.literal("mock") // Mock for development/testing
     ),
     isEnabled: v.boolean(),

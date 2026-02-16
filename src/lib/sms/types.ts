@@ -45,7 +45,7 @@ export interface InboundMessage {
 // Provider Configuration Types
 // ============================================
 
-export type SMSProviderType = 'ghl' | 'twilio' | 'vonage' | 'mock';
+export type SMSProviderType = 'ghl' | 'twilio' | 'mock';
 
 export interface SMSProviderConfig {
   provider: SMSProviderType;

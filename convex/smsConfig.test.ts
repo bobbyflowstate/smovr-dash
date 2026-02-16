@@ -23,7 +23,7 @@ async function seed(t: ReturnType<typeof convexTest>) {
 async function seedWithConfig(
   t: ReturnType<typeof convexTest>,
   configOverrides: Partial<{
-    provider: "ghl" | "twilio" | "vonage" | "mock";
+    provider: "ghl" | "twilio" | "mock";
     isEnabled: boolean;
     webhookUrl: string;
     inboundWebhookSecret: string;

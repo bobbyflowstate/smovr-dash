@@ -20,8 +20,6 @@ import type { SMSProvider, SMSProviderConfig } from '@/lib/sms';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { createAdminConvexClient } from '@/lib/convex-server';
 
-const convex = createAdminConvexClient();
-
 /**
  * Build a lightweight provider instance for signature verification only.
  * Full credentials are not needed — just the class that implements
@@ -54,6 +52,7 @@ export async function POST(request: NextRequest) {
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
     
     try {
       const { searchParams } = new URL(request.url);
@@ -61,7 +60,7 @@ export async function POST(request: NextRequest) {
       const teamIdParam = searchParams.get('team');
       
       // Validate provider
-      const validProviders = ['ghl', 'twilio', 'vonage', 'mock'] as const;
+      const validProviders = ['ghl', 'twilio', 'mock'] as const;
       if (!validProviders.includes(providerParam as any)) {
         log.warn('Invalid provider parameter', { provider: providerParam });
         return NextResponse.json(
@@ -90,6 +89,15 @@ export async function POST(request: NextRequest) {
       // --- Webhook signature verification ---
       const smsConfig = await convex.query(internal.smsConfig.getByTeamId, { teamId });
       const webhookSecret = smsConfig?.inboundWebhookSecret;
+      const requiresVerification = provider !== 'mock';
+
+      if (requiresVerification && !webhookSecret) {
+        log.error('Inbound webhook secret not configured for provider', { provider, teamId });
+        return NextResponse.json(
+          { error: 'Inbound webhook is not configured for signature verification' },
+          { status: 503 }
+        );
+      }
 
       if (webhookSecret) {
         const verifier = getProviderForVerification(provider);

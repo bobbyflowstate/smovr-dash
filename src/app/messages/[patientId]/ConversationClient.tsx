@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Id } from "../../../../convex/_generated/dataModel";
 
 interface Message {
   _id: string;
+  _creationTime?: number;
   direction: "inbound" | "outbound";
   body: string;
   status: string;
@@ -29,6 +29,8 @@ interface ConversationClientProps {
   teamName: string;
   userName: string;
 }
+
+const PAGE_SIZE = 50;
 
 function formatTime(dateString: string): string {
   const date = new Date(dateString);
@@ -83,6 +85,8 @@ export default function ConversationClient({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [showTemplates, setShowTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,31 +97,48 @@ export default function ConversationClient({
 
   // Fetch messages
   useEffect(() => {
-    const fetchMessages = async () => {
+    const fetchMessages = async (isRefresh = false) => {
       try {
-        const response = await fetch(`/api/messages?patientId=${patientId}`);
+        const response = await fetch(
+          `/api/messages?patientId=${patientId}&limit=${PAGE_SIZE}`
+        );
         if (response.ok) {
           const data: Message[] = await response.json();
           setMessages((prev) => {
+            if (!isRefresh) {
+              const serverIds = new Set(data.map((m) => m._id));
+              // Keep optimistic messages whose ID isn't in the server response yet
+              const pending = prev.filter(
+                (m) => m._id.startsWith("temp-") && !serverIds.has(m._id)
+              );
+              return [...data, ...pending];
+            }
+
+            // On refresh, replace newest page and keep older loaded pages.
             const serverIds = new Set(data.map((m) => m._id));
-            // Keep optimistic messages whose ID isn't in the server response yet
+            const older = prev.filter(
+              (m) => !m._id.startsWith("temp-") && !serverIds.has(m._id)
+            );
             const pending = prev.filter(
               (m) => m._id.startsWith("temp-") && !serverIds.has(m._id)
             );
-            return [...data, ...pending];
+            return [...data, ...older, ...pending];
           });
+          setHasMore(data.length === PAGE_SIZE);
         }
       } catch (error) {
         console.error("Error fetching messages:", error);
       } finally {
-        setIsLoading(false);
+        if (!isRefresh) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchMessages();
     
-    // Poll for new messages every 5 seconds
-    const interval = setInterval(fetchMessages, 5000);
+    // Poll for new messages every 60 seconds
+    const interval = setInterval(() => fetchMessages(true), 60000);
     return () => clearInterval(interval);
   }, [patientId]);
 
@@ -215,7 +236,45 @@ export default function ConversationClient({
     textareaRef.current?.focus();
   };
 
-  const groupedMessages = groupMessagesByDate(messages);
+  const handleLoadOlder = async () => {
+    if (isLoadingMore || !hasMore || messages.length === 0) return;
+    const oldest = messages
+      .filter((m) => typeof m._creationTime === "number")
+      .reduce<number | null>((min, m) => {
+        const created = m._creationTime as number;
+        if (min === null || created < min) return created;
+        return min;
+      }, null);
+
+    if (oldest === null) return;
+
+    try {
+      setIsLoadingMore(true);
+      const response = await fetch(
+        `/api/messages?patientId=${patientId}&limit=${PAGE_SIZE}&before=${oldest}`
+      );
+      if (!response.ok) return;
+      const olderPage: Message[] = await response.json();
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m._id));
+        const uniqueOlder = olderPage.filter((m) => !seen.has(m._id));
+        return [...prev, ...uniqueOlder];
+      });
+      setHasMore(olderPage.length === PAGE_SIZE);
+    } catch (error) {
+      console.error("Error loading older messages:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const sortedForDisplay = [...messages].sort((a, b) => {
+    const aTime = typeof a._creationTime === "number" ? a._creationTime : new Date(a.createdAt).getTime();
+    const bTime = typeof b._creationTime === "number" ? b._creationTime : new Date(b.createdAt).getTime();
+    return aTime - bTime;
+  });
+
+  const groupedMessages = groupMessagesByDate(sortedForDisplay);
   const dateKeys = Object.keys(groupedMessages).sort(
     (a, b) => new Date(a).getTime() - new Date(b).getTime()
   );
@@ -265,6 +324,17 @@ export default function ConversationClient({
           </div>
         ) : (
           <div className="space-y-4">
+            {hasMore && (
+              <div className="flex justify-center">
+                <button
+                  onClick={handleLoadOlder}
+                  disabled={isLoadingMore}
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isLoadingMore ? "Loading..." : "Load older messages"}
+                </button>
+              </div>
+            )}
             {dateKeys.map((dateKey) => (
               <div key={dateKey}>
                 {/* Date divider */}

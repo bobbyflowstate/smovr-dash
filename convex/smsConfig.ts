@@ -81,7 +81,6 @@ export const upsert = mutation({
     provider: v.union(
       v.literal("ghl"),
       v.literal("twilio"),
-      v.literal("vonage"),
       v.literal("mock")
     ),
     isEnabled: v.boolean(),

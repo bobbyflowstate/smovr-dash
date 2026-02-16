@@ -80,10 +80,6 @@ export function createProviderFromConfig(config: SMSProviderConfig): SMSProvider
       return createTwilioFromGlobalEnv();
     }
       
-    case 'vonage':
-      // TODO: Implement Vonage provider
-      throw new Error('Vonage provider not yet implemented');
-      
     default:
       throw new Error(`Unknown SMS provider: ${config.provider}`);
   }

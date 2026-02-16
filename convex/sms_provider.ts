@@ -12,7 +12,7 @@ import { createConvexLogger } from "./lib/logger";
 // Types
 // ============================================
 
-export type SMSProviderType = "ghl" | "twilio" | "vonage" | "mock";
+export type SMSProviderType = "ghl" | "twilio" | "mock";
 
 export type SendFailureReason =
   | "PROVIDER_NOT_CONFIGURED"

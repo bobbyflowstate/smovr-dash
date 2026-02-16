@@ -24,7 +24,7 @@ const log = createConvexLogger({ functionName: "sms.factory" });
 // ============================================
 
 export interface TeamSmsConfig {
-  provider: "ghl" | "twilio" | "vonage" | "mock";
+  provider: "ghl" | "twilio" | "mock";
   isEnabled: boolean;
   webhookUrl?: string;
   fromNumber?: string;

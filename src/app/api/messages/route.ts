@@ -39,30 +39,45 @@ export async function GET(request: NextRequest) {
       
       const { searchParams } = new URL(request.url);
       const patientId = searchParams.get('patientId');
+      const limitParam = searchParams.get('limit');
+      const beforeParam = searchParams.get('before');
+
+      const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
+      const limit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
       
       if (patientId) {
         // Get messages for specific patient
         log.info('Fetching messages for patient', { patientId });
-        
+
+        const beforeMessageCreatedAt = beforeParam ? Number(beforeParam) : undefined;
         const messages = await convex.query(api.messages.getMessagesForPatient, {
           userEmail,
           patientId: patientId as Id<'patients'>,
+          limit,
+          beforeMessageCreatedAt:
+            typeof beforeMessageCreatedAt === 'number' && Number.isFinite(beforeMessageCreatedAt)
+              ? beforeMessageCreatedAt
+              : undefined,
         });
-        
-        // Mark conversation as read
-        await convex.mutation(api.messages.markConversationRead, {
-          userEmail,
-          patientId: patientId as Id<'patients'>,
-        });
+
+        // Mark conversation as read only when loading the newest page.
+        if (!beforeParam) {
+          await convex.mutation(api.messages.markConversationRead, {
+            userEmail,
+            patientId: patientId as Id<'patients'>,
+          });
+        }
         
         log.info('Fetched messages', { count: messages.length });
         return NextResponse.json(messages);
       } else {
         // Get conversations list
         log.info('Fetching conversations');
-        
+
         const conversations = await convex.query(api.messages.getConversations, {
           userEmail,
+          limit,
+          beforeLastMessageAt: beforeParam || undefined,
         });
         
         log.info('Fetched conversations', { count: conversations.length });

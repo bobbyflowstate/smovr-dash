@@ -20,6 +20,8 @@ interface MessagesClientProps {
   teamName: string;
 }
 
+const PAGE_SIZE = 50;
+
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -40,30 +42,71 @@ function formatRelativeTime(dateString: string): string {
 export default function MessagesClient({ userName, teamName }: MessagesClientProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    const fetchConversations = async () => {
+    const fetchConversations = async (isRefresh = false) => {
       try {
-        setIsLoading(true);
-        const response = await fetch("/api/messages");
+        if (!isRefresh) {
+          setIsLoading(true);
+        }
+        const response = await fetch(`/api/messages?limit=${PAGE_SIZE}`);
         if (response.ok) {
-          const data = await response.json();
-          setConversations(data);
+          const data: Conversation[] = await response.json();
+          setConversations((prev) => {
+            // On refresh, keep older loaded pages while replacing the newest page.
+            if (isRefresh) {
+              const newestIds = new Set(data.map((c) => c._id));
+              const older = prev.filter((c) => !newestIds.has(c._id));
+              return [...data, ...older];
+            }
+            return data;
+          });
+          setHasMore(data.length === PAGE_SIZE);
         }
       } catch (error) {
         console.error("Error fetching conversations:", error);
       } finally {
-        setIsLoading(false);
+        if (!isRefresh) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchConversations();
     
-    // Poll for updates every 15 seconds
-    const interval = setInterval(fetchConversations, 15000);
+    // Poll for updates every 60 seconds
+    const interval = setInterval(() => fetchConversations(true), 60000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleLoadMore = async () => {
+    if (isLoadingMore || conversations.length === 0 || !hasMore) return;
+    const before = conversations[conversations.length - 1]?.lastMessageAt;
+    if (!before) return;
+
+    try {
+      setIsLoadingMore(true);
+      const response = await fetch(
+        `/api/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(before)}`
+      );
+      if (!response.ok) return;
+
+      const nextPage: Conversation[] = await response.json();
+      setConversations((prev) => {
+        const seen = new Set(prev.map((c) => c._id));
+        const uniqueNext = nextPage.filter((c) => !seen.has(c._id));
+        return [...prev, ...uniqueNext];
+      });
+      setHasMore(nextPage.length === PAGE_SIZE);
+    } catch (error) {
+      console.error("Error loading more conversations:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const filteredConversations = conversations.filter((conv) => {
     const query = searchQuery.toLowerCase();
@@ -200,6 +243,19 @@ export default function MessagesClient({ userName, teamName }: MessagesClientPro
               </Link>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!isLoading && !searchQuery && filteredConversations.length > 0 && hasMore && (
+        <div className="flex justify-center">
+          <button
+            onClick={handleLoadMore}
+            disabled={isLoadingMore}
+            className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isLoadingMore ? "Loading..." : "Load older conversations"}
+          </button>
         </div>
       )}
 

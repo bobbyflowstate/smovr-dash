@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
-import { Id } from "./_generated/dataModel";
 
 /** Seed a team + patient (with phone). Returns IDs. */
 async function seed(t: ReturnType<typeof convexTest>) {
@@ -37,6 +36,56 @@ async function seedWithMessage(t: ReturnType<typeof convexTest>) {
       createdAt: new Date().toISOString(),
     });
     return { teamId, patientId, messageId };
+  });
+}
+
+/** Seed a team + user with conversations at known times. */
+async function seedUserWithConversations(t: ReturnType<typeof convexTest>) {
+  return t.run(async (ctx) => {
+    const teamId = await ctx.db.insert("teams", { name: "Acme Dental" });
+    await ctx.db.insert("users", {
+      name: "Dr. Smith",
+      email: "smith@acme.test",
+      tokenIdentifier: "tok-smith",
+      teamId,
+    });
+
+    const p1 = await ctx.db.insert("patients", { phone: "+15550000001", name: "P1", teamId });
+    const p2 = await ctx.db.insert("patients", { phone: "+15550000002", name: "P2", teamId });
+    const p3 = await ctx.db.insert("patients", { phone: "+15550000003", name: "P3", teamId });
+
+    await ctx.db.insert("conversations", {
+      teamId,
+      patientId: p1,
+      patientPhone: "+15550000001",
+      patientName: "P1",
+      lastMessageBody: "old",
+      lastMessageDirection: "inbound",
+      lastMessageAt: "2026-01-01T10:00:00.000Z",
+      unreadCount: 0,
+    });
+    await ctx.db.insert("conversations", {
+      teamId,
+      patientId: p2,
+      patientPhone: "+15550000002",
+      patientName: "P2",
+      lastMessageBody: "middle",
+      lastMessageDirection: "inbound",
+      lastMessageAt: "2026-01-01T11:00:00.000Z",
+      unreadCount: 1,
+    });
+    await ctx.db.insert("conversations", {
+      teamId,
+      patientId: p3,
+      patientPhone: "+15550000003",
+      patientName: "P3",
+      lastMessageBody: "new",
+      lastMessageDirection: "outbound",
+      lastMessageAt: "2026-01-01T12:00:00.000Z",
+      unreadCount: 2,
+    });
+
+    return { teamId, patientIds: [p1, p2, p3] };
   });
 }
 
@@ -121,6 +170,95 @@ describe("messages.createInboundMessage", () => {
     );
     expect(conv!.unreadCount).toBe(2);
     expect(conv!.lastMessageBody).toBe("Message 2");
+  });
+});
+
+describe("messages list queries", () => {
+  it("getConversations returns newest first and supports beforeLastMessageAt pagination", async () => {
+    const t = convexTest(schema, modules);
+    await seedUserWithConversations(t);
+
+    const firstPage = await t.query(api.messages.getConversations, {
+      userEmail: "smith@acme.test",
+      limit: 2,
+    });
+    expect(firstPage).toHaveLength(2);
+    expect(firstPage[0].lastMessageAt).toBe("2026-01-01T12:00:00.000Z");
+    expect(firstPage[1].lastMessageAt).toBe("2026-01-01T11:00:00.000Z");
+
+    const secondPage = await t.query(api.messages.getConversations, {
+      userEmail: "smith@acme.test",
+      limit: 2,
+      beforeLastMessageAt: firstPage[firstPage.length - 1].lastMessageAt,
+    });
+    expect(secondPage).toHaveLength(1);
+    expect(secondPage[0].lastMessageAt).toBe("2026-01-01T10:00:00.000Z");
+  });
+
+  it("getMessagesForPatient returns newest first and paginates by _creationTime cursor", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await t.run(async (ctx) => {
+      const teamId = await ctx.db.insert("teams", { name: "Acme Dental" });
+      await ctx.db.insert("users", {
+        name: "Dr. Smith",
+        email: "smith@acme.test",
+        tokenIdentifier: "tok-smith",
+        teamId,
+      });
+      const patientId = await ctx.db.insert("patients", {
+        phone: "+15559998888",
+        name: "Alice",
+        teamId,
+      });
+
+      await ctx.db.insert("messages", {
+        teamId,
+        patientId,
+        direction: "inbound",
+        body: "m1",
+        phone: "+15559998888",
+        status: "received",
+        createdAt: "2026-01-01T10:00:00.000Z",
+      });
+      await ctx.db.insert("messages", {
+        teamId,
+        patientId,
+        direction: "inbound",
+        body: "m2",
+        phone: "+15559998888",
+        status: "received",
+        createdAt: "2026-01-01T10:01:00.000Z",
+      });
+      await ctx.db.insert("messages", {
+        teamId,
+        patientId,
+        direction: "inbound",
+        body: "m3",
+        phone: "+15559998888",
+        status: "received",
+        createdAt: "2026-01-01T10:02:00.000Z",
+      });
+
+      return { patientId };
+    });
+
+    const firstPage = await t.query(api.messages.getMessagesForPatient, {
+      userEmail: "smith@acme.test",
+      patientId: seeded.patientId,
+      limit: 2,
+    });
+    expect(firstPage).toHaveLength(2);
+    expect(firstPage[0].body).toBe("m3");
+    expect(firstPage[1].body).toBe("m2");
+
+    const secondPage = await t.query(api.messages.getMessagesForPatient, {
+      userEmail: "smith@acme.test",
+      patientId: seeded.patientId,
+      limit: 2,
+      beforeMessageCreatedAt: firstPage[firstPage.length - 1]._creationTime,
+    });
+    expect(secondPage).toHaveLength(1);
+    expect(secondPage[0].body).toBe("m1");
   });
 });
 
