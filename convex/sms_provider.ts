@@ -6,6 +6,8 @@
  * Buffer, URLSearchParams) — no npm SDK dependencies.
  */
 
+import { createConvexLogger } from "./lib/logger";
+
 // ============================================
 // Types
 // ============================================
@@ -65,6 +67,7 @@ export class GHLProvider implements SMSProvider {
   }
 
   async sendMessage(params: SendMessageParams): Promise<SendResult> {
+    const log = createConvexLogger({ functionName: "sms.ghl.send", provider: "ghl" });
     const payload = { phone: params.to, message: params.body };
     let lastError: Error | null = null;
     let lastStatus: number | null = null;
@@ -72,7 +75,7 @@ export class GHLProvider implements SMSProvider {
     for (let attempt = 0; attempt <= GHL_MAX_RETRIES; attempt++) {
       if (attempt > 0) {
         const backoffMs = GHL_INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
-        console.log(`[GHL] Retry ${attempt}/${GHL_MAX_RETRIES} after ${backoffMs}ms`);
+        log.info(`Retry ${attempt}/${GHL_MAX_RETRIES} after ${backoffMs}ms`);
         await sleep(backoffMs);
       }
 
@@ -80,7 +83,7 @@ export class GHLProvider implements SMSProvider {
       const timeoutId = setTimeout(() => controller.abort(), GHL_TIMEOUT_MS);
 
       try {
-        if (attempt === 0) console.log("[GHL] Sending SMS to:", params.to);
+        if (attempt === 0) log.info("Sending SMS", { to: params.to });
 
         const response = await fetch(this.webhookUrl, {
           method: "POST",
@@ -92,7 +95,7 @@ export class GHLProvider implements SMSProvider {
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          console.log("[GHL] SMS sent successfully");
+          log.info("SMS sent successfully");
           return {
             success: true,
             messageId: `ghl-${Date.now()}`,
@@ -103,7 +106,7 @@ export class GHLProvider implements SMSProvider {
 
         lastStatus = response.status;
         if (!isRetryableStatus(response.status)) {
-          console.error(`[GHL] Non-retryable status: ${response.status}`);
+          log.error(`Non-retryable status: ${response.status}`);
           return {
             success: false,
             attemptCount: attempt + 1,
@@ -118,7 +121,7 @@ export class GHLProvider implements SMSProvider {
       }
     }
 
-    console.error(`[GHL] Failed after ${GHL_MAX_RETRIES + 1} attempts`);
+    log.error(`Failed after ${GHL_MAX_RETRIES + 1} attempts`);
     return {
       success: false,
       attemptCount: GHL_MAX_RETRIES + 1,
@@ -156,6 +159,7 @@ export class TwilioProvider implements SMSProvider {
   }
 
   async sendMessage(params: SendMessageParams): Promise<SendResult> {
+    const log = createConvexLogger({ functionName: "sms.twilio.send", provider: "twilio" });
     const url = `${TWILIO_API_BASE}/Accounts/${this.config.accountSid}/Messages.json`;
     const formData = new URLSearchParams();
     formData.append("To", params.to);
@@ -175,7 +179,7 @@ export class TwilioProvider implements SMSProvider {
     const timeoutId = setTimeout(() => controller.abort(), TWILIO_TIMEOUT_MS);
 
     try {
-      console.log("[Twilio] Sending SMS to:", params.to);
+      log.info("Sending SMS", { to: params.to });
 
       const response = await fetch(url, {
         method: "POST",
@@ -191,7 +195,7 @@ export class TwilioProvider implements SMSProvider {
       const data = await response.json();
 
       if (response.ok) {
-        console.log("[Twilio] SMS sent, SID:", data.sid);
+        log.info("SMS sent successfully", { sid: data.sid });
         return {
           success: true,
           messageId: data.sid,
@@ -200,7 +204,7 @@ export class TwilioProvider implements SMSProvider {
         };
       }
 
-      console.error("[Twilio] Failed:", data.message || data.code);
+      log.error("SMS send failed", new Error(data.message || data.code), { httpStatus: response.status });
       return {
         success: false,
         attemptCount: 1,
@@ -211,7 +215,7 @@ export class TwilioProvider implements SMSProvider {
     } catch (error) {
       clearTimeout(timeoutId);
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error("[Twilio] Error:", err.message);
+      log.error("SMS send error", err);
       return {
         success: false,
         attemptCount: 1,
@@ -230,8 +234,9 @@ export class MockSMSProvider implements SMSProvider {
   readonly name = "mock" as const;
 
   async sendMessage(params: SendMessageParams): Promise<SendResult> {
+    const log = createConvexLogger({ functionName: "sms.mock.send", provider: "mock" });
     const messageId = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    console.warn(`[MOCK SMS - NOT DELIVERED] to=${params.to} body="${params.body.slice(0, 80)}…"`);
+    log.warn("MOCK SMS - NOT DELIVERED", { to: params.to, messageId });
     return { success: true, messageId, attemptCount: 1, httpStatus: 200 };
   }
 }

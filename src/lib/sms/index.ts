@@ -8,6 +8,9 @@
 import { internal } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import type { AdminConvexClient } from '@/lib/convex-server';
+import { globalLogger } from '@/lib/observability';
+
+const log = globalLogger.child({ component: 'sms.factory' });
 
 import type { SMSProvider, SMSProviderConfig, SendResult, InboundMessage } from './types';
 import { MockSMSProvider } from './providers/mock';
@@ -39,13 +42,13 @@ export async function getSMSProviderForTeam(
     const config = await convex.query(internal.smsConfig.getByTeamId, { teamId });
     
     if (!config || !config.isEnabled) {
-      console.log(`[SMS] No SMS config or disabled for team ${teamId}`);
+      log.debug(`No SMS config or disabled for team`, { teamId });
       return null;
     }
     
     return createProviderFromConfig(config);
   } catch (error) {
-    console.error(`[SMS] Error getting provider for team ${teamId}:`, error);
+    log.error(`Error getting provider for team`, error, { teamId });
     return null;
   }
 }
@@ -104,7 +107,7 @@ export function getDefaultSMSProvider(): SMSProvider {
   const twilioFromNumber = process.env.TWILIO_FROM_NUMBER;
   
   if (twilioAccountSid && twilioAuthToken && (twilioMessagingServiceSid || twilioFromNumber)) {
-    console.log('[SMS] Using Twilio provider');
+    log.info('Using Twilio provider');
     return new TwilioProvider({
       accountSid: twilioAccountSid,
       authToken: twilioAuthToken,
@@ -116,7 +119,7 @@ export function getDefaultSMSProvider(): SMSProvider {
   // Fall back to GHL
   const ghlWebhookUrl = process.env.GHL_SMS_WEBHOOK_URL;
   if (ghlWebhookUrl) {
-    console.log('[SMS] Using GHL provider');
+    log.info('Using GHL provider');
     return new GHLProvider(ghlWebhookUrl);
   }
   
@@ -127,8 +130,8 @@ export function getDefaultSMSProvider(): SMSProvider {
     );
   }
 
-  console.warn(
-    '[SMS] WARNING: No SMS provider configured — messages will NOT be delivered. ' +
+  log.warn(
+    'No SMS provider configured — messages will NOT be delivered. ' +
     'Set TWILIO_* or GHL_SMS_WEBHOOK_URL env vars.'
   );
   return new MockSMSProvider();

@@ -6,6 +6,9 @@
  */
 
 import type { SMSProvider, SendMessageParams, SendResult, InboundMessage } from '../types';
+import { globalLogger } from '@/lib/observability';
+
+const log = globalLogger.child({ component: 'sms.ghl' });
 
 // Configuration
 const WEBHOOK_TIMEOUT_MS = 10000; // 10 seconds
@@ -45,7 +48,7 @@ export class GHLProvider implements SMSProvider {
       // Apply backoff delay before retries (not on first attempt)
       if (attempt > 0) {
         const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
-        console.log(`[GHL] SMS webhook retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms backoff`);
+        log.info(`Retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms backoff`);
         await sleep(backoffMs);
       }
       
@@ -55,7 +58,7 @@ export class GHLProvider implements SMSProvider {
       
       try {
         if (attempt === 0) {
-          console.log('[GHL] Sending SMS webhook to:', this.webhookUrl);
+          log.info('Sending SMS webhook', { to: params.to });
         }
         
         const response = await fetch(this.webhookUrl, {
@@ -71,9 +74,9 @@ export class GHLProvider implements SMSProvider {
         
         if (response.ok) {
           if (attempt > 0) {
-            console.log(`[GHL] SMS webhook sent successfully on retry ${attempt}`);
+            log.info(`SMS webhook sent successfully on retry ${attempt}`);
           } else {
-            console.log('[GHL] SMS webhook sent successfully');
+            log.info('SMS webhook sent successfully');
           }
           
           return {
@@ -87,7 +90,7 @@ export class GHLProvider implements SMSProvider {
         lastStatus = response.status;
         
         if (!isRetryableStatus(response.status)) {
-          console.error(`[GHL] SMS webhook failed with non-retryable status: ${response.status}`);
+          log.error(`SMS webhook failed with non-retryable status: ${response.status}`);
           return {
             success: false,
             attemptCount: attempt + 1,
@@ -97,21 +100,21 @@ export class GHLProvider implements SMSProvider {
           };
         }
         
-        console.warn(`[GHL] SMS webhook failed with retryable status: ${response.status}`);
+        log.warn(`SMS webhook failed with retryable status: ${response.status}`);
       } catch (error) {
         clearTimeout(timeoutId);
         lastError = error instanceof Error ? error : new Error(String(error));
         
         if (lastError.name === 'AbortError') {
-          console.warn(`[GHL] SMS webhook request timed out (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+          log.warn(`SMS webhook request timed out`, { attempt: attempt + 1, maxAttempts: MAX_RETRIES + 1 });
         } else {
-          console.warn(`[GHL] SMS webhook error (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, lastError.message);
+          log.warn(`SMS webhook error`, { attempt: attempt + 1, maxAttempts: MAX_RETRIES + 1, error: lastError.message });
         }
       }
     }
     
     // All retries exhausted
-    console.error(`[GHL] SMS webhook failed after ${MAX_RETRIES + 1} attempts`);
+    log.error(`SMS webhook failed after ${MAX_RETRIES + 1} attempts`);
     
     return {
       success: false,
@@ -132,7 +135,7 @@ export class GHLProvider implements SMSProvider {
       const message = body.message || body.body || body.text;
       
       if (!phone || !message) {
-        console.warn('[GHL] Invalid inbound webhook payload:', body);
+        log.warn('Invalid inbound webhook payload');
         return null;
       }
       
@@ -144,7 +147,7 @@ export class GHLProvider implements SMSProvider {
         rawPayload: body,
       };
     } catch (error) {
-      console.error('[GHL] Failed to parse inbound webhook:', error);
+      log.error('Failed to parse inbound webhook', error);
       return null;
     }
   }
@@ -155,7 +158,7 @@ export class GHLProvider implements SMSProvider {
     // header (set this in the GHL workflow HTTP action).
     const header = request.headers.get('X-Webhook-Secret');
     if (!header) {
-      console.warn('[GHL] Missing X-Webhook-Secret header');
+      log.warn('Missing X-Webhook-Secret header');
       return false;
     }
 
@@ -166,11 +169,11 @@ export class GHLProvider implements SMSProvider {
         Buffer.from(secret, 'utf-8'),
       );
       if (!valid) {
-        console.warn('[GHL] X-Webhook-Secret mismatch');
+        log.warn('X-Webhook-Secret mismatch');
       }
       return valid;
     } catch {
-      console.warn('[GHL] X-Webhook-Secret mismatch');
+      log.warn('X-Webhook-Secret mismatch');
       return false;
     }
   }

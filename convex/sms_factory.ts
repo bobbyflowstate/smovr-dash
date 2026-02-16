@@ -15,6 +15,9 @@ import {
   type SMSProvider,
   type TwilioConfig,
 } from "./sms_provider";
+import { createConvexLogger } from "./lib/logger";
+
+const log = createConvexLogger({ functionName: "sms.factory" });
 
 // ============================================
 // Team-config-based provider creation
@@ -88,7 +91,7 @@ export function getDefaultProvider(): SMSProvider {
   const twilioFrom = process.env.TWILIO_FROM_NUMBER;
 
   if (twilioSid && twilioToken && (twilioMsgSvc || twilioFrom)) {
-    console.log("[SMS] Using Twilio provider");
+    log.info("Using Twilio provider");
     return new TwilioProvider({
       accountSid: twilioSid,
       authToken: twilioToken,
@@ -99,12 +102,12 @@ export function getDefaultProvider(): SMSProvider {
 
   const ghlUrl = process.env.GHL_SMS_WEBHOOK_URL;
   if (ghlUrl) {
-    console.log("[SMS] Using GHL provider");
+    log.info("Using GHL provider");
     return new GHLProvider(ghlUrl);
   }
 
-  console.warn(
-    "[SMS] WARNING: No SMS provider configured — messages will NOT be delivered. " +
+  log.warn(
+    "No SMS provider configured — messages will NOT be delivered. " +
     "Set TWILIO_* or GHL_SMS_WEBHOOK_URL env vars."
   );
   return new MockSMSProvider();

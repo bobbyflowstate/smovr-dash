@@ -7,6 +7,9 @@
  */
 
 import type { SMSProvider, SendMessageParams, SendResult, InboundMessage } from '../types';
+import { globalLogger } from '@/lib/observability';
+
+const log = globalLogger.child({ component: 'sms.twilio' });
 
 // Twilio API configuration
 const TWILIO_API_BASE = 'https://api.twilio.com/2010-04-01';
@@ -54,7 +57,7 @@ export class TwilioProvider implements SMSProvider {
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
     try {
-      console.log('[Twilio] Sending SMS to:', params.to);
+      log.info('Sending SMS', { to: params.to });
       
       const response = await fetch(url, {
         method: 'POST',
@@ -71,7 +74,7 @@ export class TwilioProvider implements SMSProvider {
       const data = await response.json();
       
       if (response.ok) {
-        console.log('[Twilio] SMS sent successfully, SID:', data.sid);
+        log.info('SMS sent successfully', { sid: data.sid });
         return {
           success: true,
           messageId: data.sid,
@@ -80,7 +83,7 @@ export class TwilioProvider implements SMSProvider {
         };
       }
       
-      console.error('[Twilio] SMS send failed:', data.message || data.code);
+      log.error('SMS send failed', new Error(data.message || data.code), { httpStatus: response.status });
       return {
         success: false,
         attemptCount: 1,
@@ -92,7 +95,7 @@ export class TwilioProvider implements SMSProvider {
       clearTimeout(timeoutId);
       const err = error instanceof Error ? error : new Error(String(error));
       
-      console.error('[Twilio] SMS send error:', err.message);
+      log.error('SMS send error', err);
       return {
         success: false,
         attemptCount: 1,
@@ -113,7 +116,7 @@ export class TwilioProvider implements SMSProvider {
       const messageSid = params.get('MessageSid');
       
       if (!from || !body) {
-        console.warn('[Twilio] Invalid inbound webhook - missing From or Body');
+        log.warn('Invalid inbound webhook - missing From or Body');
         return null;
       }
       
@@ -125,7 +128,7 @@ export class TwilioProvider implements SMSProvider {
         rawPayload: Object.fromEntries(params),
       };
     } catch (error) {
-      console.error('[Twilio] Failed to parse inbound webhook:', error);
+      log.error('Failed to parse inbound webhook', error);
       return null;
     }
   }
@@ -135,7 +138,7 @@ export class TwilioProvider implements SMSProvider {
     // https://www.twilio.com/docs/usage/security#validating-requests
     const signature = request.headers.get('X-Twilio-Signature');
     if (!signature) {
-      console.warn('[Twilio] No X-Twilio-Signature header present');
+      log.warn('No X-Twilio-Signature header present');
       return false;
     }
 
@@ -160,17 +163,17 @@ export class TwilioProvider implements SMSProvider {
       const expectedBuf = Buffer.from(expected, 'base64');
 
       if (sigBuf.length !== expectedBuf.length) {
-        console.warn('[Twilio] Webhook signature length mismatch');
+        log.warn('Webhook signature length mismatch');
         return false;
       }
 
       const valid = timingSafeEqual(sigBuf, expectedBuf);
       if (!valid) {
-        console.warn('[Twilio] Webhook signature mismatch');
+        log.warn('Webhook signature mismatch');
       }
       return valid;
     } catch (error) {
-      console.error('[Twilio] Error verifying webhook signature:', error);
+      log.error('Error verifying webhook signature', error);
       return false;
     }
   }

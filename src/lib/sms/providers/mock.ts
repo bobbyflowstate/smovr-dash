@@ -6,6 +6,9 @@
  */
 
 import type { SMSProvider, SendMessageParams, SendResult, InboundMessage } from '../types';
+import { globalLogger } from '@/lib/observability';
+
+const log = globalLogger.child({ component: 'sms.mock' });
 
 export class MockSMSProvider implements SMSProvider {
   readonly name = 'mock' as const;
@@ -14,17 +17,11 @@ export class MockSMSProvider implements SMSProvider {
     const timestamp = new Date().toISOString();
     const messageId = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     
-    console.warn('═══════════════════════════════════════════════════════════');
-    console.warn('[MOCK SMS - NOT DELIVERED] Outbound Message');
-    console.warn('═══════════════════════════════════════════════════════════');
-    console.warn(`  To:        ${params.to}`);
-    console.warn(`  From:      ${params.from || '(default)'}`);
-    console.warn(`  Timestamp: ${timestamp}`);
-    console.warn(`  MessageID: ${messageId}`);
-    console.warn('───────────────────────────────────────────────────────────');
-    console.warn(`  Body:`);
-    console.warn(`  ${params.body.split('\n').join('\n  ')}`);
-    console.warn('═══════════════════════════════════════════════════════════');
+    log.warn('MOCK SMS - NOT DELIVERED', {
+      to: params.to,
+      from: params.from || '(default)',
+      messageId,
+    }, { body: params.body });
     
     return {
       success: true,
@@ -40,7 +37,7 @@ export class MockSMSProvider implements SMSProvider {
       
       // Expected format: { phone: string, message: string }
       if (!body.phone || !body.message) {
-        console.warn('[MOCK SMS] Invalid inbound webhook payload:', body);
+        log.warn('Invalid inbound webhook payload');
         return null;
       }
       
@@ -52,20 +49,14 @@ export class MockSMSProvider implements SMSProvider {
         rawPayload: body,
       };
       
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📥 [MOCK SMS] Inbound Message Received');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log(`  From:      ${inbound.phone}`);
-      console.log(`  Timestamp: ${inbound.receivedAt}`);
-      console.log(`  MessageID: ${inbound.providerMessageId}`);
-      console.log('───────────────────────────────────────────────────────────');
-      console.log(`  Body:`);
-      console.log(`  ${inbound.body}`);
-      console.log('═══════════════════════════════════════════════════════════');
+      log.info('MOCK SMS - Inbound message received', {
+        from: inbound.phone,
+        messageId: inbound.providerMessageId,
+      }, { body: inbound.body });
       
       return inbound;
     } catch (error) {
-      console.error('[MOCK SMS] Failed to parse inbound webhook:', error);
+      log.error('Failed to parse inbound webhook', error);
       return null;
     }
   }
