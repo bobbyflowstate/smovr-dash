@@ -159,28 +159,29 @@ export const listForTeam = query({
       .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
       .collect();
     
-    // For each patient, get their upcoming appointment count
-    const patientsWithStats = await Promise.all(
-      patients.map(async (patient) => {
-        const now = new Date().toISOString();
-        const appointments = await ctx.db
-          .query("appointments")
-          .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
-          .filter((q) =>
-            q.and(
-              q.eq(q.field("patientId"), patient._id),
-              q.neq(q.field("status"), "cancelled"),
-              q.gte(q.field("dateTime"), now)
-            )
-          )
-          .collect();
-        
-        return {
-          ...patient,
-          upcomingAppointments: appointments.length,
-        };
-      })
-    );
+    // Avoid N+1: fetch upcoming appointments once, then aggregate counts per patient.
+    const now = new Date().toISOString();
+    const upcomingAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .filter((q) =>
+        q.and(
+          q.neq(q.field("status"), "cancelled"),
+          q.gte(q.field("dateTime"), now)
+        )
+      )
+      .collect();
+
+    const upcomingByPatient = new Map<string, number>();
+    for (const appt of upcomingAppointments) {
+      const key = String(appt.patientId);
+      upcomingByPatient.set(key, (upcomingByPatient.get(key) || 0) + 1);
+    }
+
+    const patientsWithStats = patients.map((patient) => ({
+      ...patient,
+      upcomingAppointments: upcomingByPatient.get(String(patient._id)) || 0,
+    }));
     
     log.debug("Fetched patients with stats", { count: patientsWithStats.length });
     return patientsWithStats;

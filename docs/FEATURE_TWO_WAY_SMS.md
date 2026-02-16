@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add two-way SMS messaging to the dashboard, allowing staff to view patient replies and send messages directly from the UI. The implementation abstracts the SMS provider to allow easy switching from GoHighLevel to Twilio, Vonage, or others.
+Add two-way SMS messaging to the dashboard, allowing staff to view patient replies and send messages directly from the UI. The implementation abstracts the SMS provider to allow easy switching from GoHighLevel to Twilio or others.
 
 ## Requirements
 
@@ -36,10 +36,10 @@ Add two-way SMS messaging to the dashboard, allowing staff to view patient repli
                               │
               ┌───────────────┼───────────────┐
               ▼               ▼               ▼
-        ┌──────────┐   ┌──────────┐   ┌──────────┐
-        │  GHL     │   │  Twilio  │   │  Vonage  │
-        │ Adapter  │   │ Adapter  │   │ Adapter  │
-        └──────────┘   └──────────┘   └──────────┘
+        ┌──────────┐   ┌──────────┐
+        │  GHL     │   │  Twilio  │
+        │ Adapter  │   │ Adapter  │
+        └──────────┘   └──────────┘
 ```
 
 ### Provider Configuration (Per-Team)
@@ -49,14 +49,12 @@ Add two-way SMS messaging to the dashboard, allowing staff to view patient repli
 // Secrets are encrypted or stored in env vars keyed by teamId
 
 interface TeamSMSConfig {
-  provider: "ghl" | "twilio" | "vonage" | "mock";
+  provider: "ghl" | "twilio" | "mock";
   // Provider-specific fields (stored encrypted or as env var references)
   webhookUrl?: string;      // GHL
   accountSid?: string;      // Twilio
   authToken?: string;       // Twilio
-  fromNumber?: string;      // Twilio/Vonage
-  apiKey?: string;          // Vonage
-  apiSecret?: string;       // Vonage
+  fromNumber?: string;      // Twilio
 }
 ```
 
@@ -154,7 +152,6 @@ teamSmsConfig: defineTable({
   provider: v.union(
     v.literal("ghl"),
     v.literal("twilio"),
-    v.literal("vonage"),
     v.literal("mock")
   ),
   isEnabled: v.boolean(),
@@ -334,8 +331,6 @@ export async function getSMSProvider(teamId: string): Promise<SMSProvider> {
 ```typescript
 // POST /api/webhooks/sms/ghl
 // POST /api/webhooks/sms/twilio
-// POST /api/webhooks/sms/vonage
-
 // Each route:
 // 1. Verify signature (if supported)
 // 2. Parse inbound message using provider

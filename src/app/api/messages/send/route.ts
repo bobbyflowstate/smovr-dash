@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    let createdMessageId: Id<'messages'> | null = null;
     
     try {
       // Auth check
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
       });
       
       const { messageId, phone, teamId } = createResult;
+      createdMessageId = messageId as Id<'messages'>;
       
       // Get SMS provider for team
       let provider = await getSMSProviderForTeam(convex, teamId as Id<'teams'>);
@@ -165,6 +167,17 @@ export async function POST(request: NextRequest) {
         providerMessageId: sendResult.messageId,
       });
     } catch (error) {
+      if (createdMessageId) {
+        try {
+          await convex.mutation(internal.messages.updateMessageStatus, {
+            messageId: createdMessageId,
+            status: 'failed',
+            errorMessage: safeErrorMessage(error, 'Failed to send SMS'),
+          });
+        } catch (statusError) {
+          log.error('Failed to update message status to failed', statusError);
+        }
+      }
       log.error('Error sending SMS', error);
       return NextResponse.json(
         { error: safeErrorMessage(error, 'Internal server error') },
