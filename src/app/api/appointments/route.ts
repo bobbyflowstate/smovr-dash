@@ -16,8 +16,6 @@ import {
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { createAdminConvexClient } from '@/lib/convex-server';
 
-const convex = createAdminConvexClient();
-
 // GET /api/appointments - Get user's appointments
 export async function GET(request: NextRequest) {
   const ctx = createRequestContext({
@@ -28,6 +26,7 @@ export async function GET(request: NextRequest) {
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
 
     try {
       // 🔐 Server-side authentication validation
@@ -72,6 +71,7 @@ export async function POST(request: NextRequest) {
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
 
     try {
       // 🔐 Server-side authentication validation

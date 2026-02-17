@@ -20,8 +20,6 @@ import { formatAppointmentDateTime } from '@/lib/webhook-utils';
 import { createAdminConvexClient } from '@/lib/convex-server';
 import { safeErrorMessage } from '@/lib/api-utils';
 
-const convex = createAdminConvexClient();
-
 export async function POST(request: NextRequest) {
   const ctx = createRequestContext({
     pathname: request.nextUrl.pathname,
@@ -31,6 +29,7 @@ export async function POST(request: NextRequest) {
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
     let createdMessageId: Id<'messages'> | null = null;
     
     try {
@@ -186,4 +185,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

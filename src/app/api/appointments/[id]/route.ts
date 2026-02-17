@@ -8,8 +8,6 @@ import { recordCancellationSmsAttempt } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { createAdminConvexClient } from '@/lib/convex-server';
 
-const convex = createAdminConvexClient();
-
 // GET /api/appointments/[id] - Get appointment details (authenticated)
 export async function GET(
   request: NextRequest,
@@ -23,6 +21,7 @@ export async function GET(
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
 
     try {
       const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
@@ -105,6 +104,7 @@ export async function DELETE(
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
 
     try {
       // 🔐 Server-side authentication validation
