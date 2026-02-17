@@ -56,8 +56,9 @@ export async function POST(request: NextRequest) {
     
     try {
       const { searchParams } = new URL(request.url);
-      const providerParam = searchParams.get('provider') || 'ghl';
       const teamIdParam = searchParams.get('team');
+      const providerParam = searchParams.get('provider') || 'ghl';
+      const isProduction = process.env.NODE_ENV === 'production';
       
       // Validate provider
       const validProviders = ['ghl', 'twilio', 'mock'] as const;
@@ -68,9 +69,8 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      
-      const provider = providerParam as typeof validProviders[number];
-      extendContext({ provider });
+
+      const requestedProvider = providerParam as SMSProviderConfig['provider'];
       
       // Team ID is required
       if (!teamIdParam) {
@@ -82,12 +82,34 @@ export async function POST(request: NextRequest) {
       }
       
       const teamId = teamIdParam as Id<'teams'>;
-      extendContext({ teamId });
-      
-      log.info('Processing inbound SMS webhook', { provider, teamId });
+      const smsConfig = await convex.query(internal.smsConfig.getByTeamId, { teamId });
+
+      // In production, provider comes from team configuration (source of truth).
+      // Query param provider is only honored in non-production environments.
+      let provider: SMSProviderConfig['provider'];
+      if (isProduction) {
+        if (!smsConfig?.provider) {
+          log.error('No SMS provider configured for team', { teamId });
+          return NextResponse.json(
+            { error: 'SMS provider is not configured for this team' },
+            { status: 503 }
+          );
+        }
+        provider = smsConfig.provider;
+      } else {
+        provider = requestedProvider;
+      }
+
+      // Never allow mock provider in production.
+      if (isProduction && provider === 'mock') {
+        log.warn('Mock provider is not available in production', { teamId });
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
+
+      extendContext({ provider, teamId });
+      log.info('Processing inbound SMS webhook', { provider, teamId, requestedProvider });
 
       // --- Webhook signature verification ---
-      const smsConfig = await convex.query(internal.smsConfig.getByTeamId, { teamId });
       const webhookSecret = smsConfig?.inboundWebhookSecret;
       const requiresVerification = provider !== 'mock';
 
