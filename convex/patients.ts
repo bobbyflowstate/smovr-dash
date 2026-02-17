@@ -128,3 +128,274 @@ export const getByTeam = query({
     return patientsWithNames;
   },
 });
+
+// ============================================
+// Patient Management Queries
+// ============================================
+
+/**
+ * Get all patients for a team with full details
+ */
+export const listForTeam = query({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const log = createQueryLogger("patients.listForTeam", { userEmail: args.userEmail });
+    
+    // Get user to find their team
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    
+    if (!user) {
+      log.error("User not found");
+      return [];
+    }
+    
+    const patients = await ctx.db
+      .query("patients")
+      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .collect();
+    
+    // Avoid N+1: fetch upcoming appointments once, then aggregate counts per patient.
+    const now = new Date().toISOString();
+    const upcomingAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .filter((q) =>
+        q.and(
+          q.neq(q.field("status"), "cancelled"),
+          q.gte(q.field("dateTime"), now)
+        )
+      )
+      .collect();
+
+    const upcomingByPatient = new Map<string, number>();
+    for (const appt of upcomingAppointments) {
+      const key = String(appt.patientId);
+      upcomingByPatient.set(key, (upcomingByPatient.get(key) || 0) + 1);
+    }
+
+    const patientsWithStats = patients.map((patient) => ({
+      ...patient,
+      upcomingAppointments: upcomingByPatient.get(String(patient._id)) || 0,
+    }));
+    
+    log.debug("Fetched patients with stats", { count: patientsWithStats.length });
+    return patientsWithStats;
+  },
+});
+
+/**
+ * Get a single patient with their appointment history
+ */
+export const getWithHistory = query({
+  args: {
+    userEmail: v.string(),
+    patientId: v.id("patients"),
+  },
+  handler: async (ctx, args) => {
+    const log = createQueryLogger("patients.getWithHistory", { 
+      userEmail: args.userEmail,
+      patientId: args.patientId,
+    });
+    
+    // Get user to verify team access
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    
+    if (!user) {
+      log.error("User not found");
+      return null;
+    }
+    
+    const patient = await ctx.db.get(args.patientId);
+    
+    if (!patient || patient.teamId !== user.teamId) {
+      log.error("Patient not found or not in user's team");
+      return null;
+    }
+    
+    // Get all appointments for this patient
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .filter((q) => q.eq(q.field("patientId"), patient._id))
+      .collect();
+    
+    // Sort by date descending
+    appointments.sort((a, b) => b.dateTime.localeCompare(a.dateTime));
+    
+    log.debug("Fetched patient with history", { appointmentCount: appointments.length });
+    
+    return {
+      ...patient,
+      appointments,
+    };
+  },
+});
+
+// ============================================
+// Patient Management Mutations
+// ============================================
+
+/**
+ * Update a patient's information
+ */
+export const update = mutation({
+  args: {
+    userEmail: v.string(),
+    patientId: v.id("patients"),
+    name: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    birthday: v.optional(v.string()), // ISO date string (YYYY-MM-DD) or empty string to clear
+  },
+  handler: async (ctx, args) => {
+    const log = createMutationLogger("patients.update", { 
+      userEmail: args.userEmail,
+      patientId: args.patientId,
+    });
+    
+    // Get user to verify team access
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    
+    if (!user) {
+      log.error("User not found");
+      throw new Error("User not found");
+    }
+    
+    const patient = await ctx.db.get(args.patientId);
+    
+    if (!patient || patient.teamId !== user.teamId) {
+      log.error("Patient not found or not in user's team");
+      throw new Error("Patient not found");
+    }
+    
+    // Build update object with only provided fields
+    const updates: Record<string, string | undefined> = {};
+    if (args.name !== undefined) updates.name = args.name;
+    if (args.phone !== undefined) updates.phone = args.phone;
+    if (args.notes !== undefined) updates.notes = args.notes;
+    if (args.birthday !== undefined) updates.birthday = args.birthday || undefined; // Empty string clears
+    
+    await ctx.db.patch(args.patientId, updates);
+    
+    log.info("Updated patient", { updates: Object.keys(updates) });
+    
+    return { success: true };
+  },
+});
+
+/**
+ * Create a new patient
+ */
+export const create = mutation({
+  args: {
+    userEmail: v.string(),
+    name: v.string(),
+    phone: v.string(),
+    notes: v.optional(v.string()),
+    birthday: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
+  },
+  handler: async (ctx, args) => {
+    const log = createMutationLogger("patients.create", { 
+      userEmail: args.userEmail,
+      phone: args.phone,
+    });
+    
+    // Get user to find their team
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    
+    if (!user) {
+      log.error("User not found");
+      throw new Error("User not found");
+    }
+    
+    // Check if patient with this phone already exists in the team
+    const existing = await ctx.db
+      .query("patients")
+      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .filter((q) => q.eq(q.field("phone"), args.phone))
+      .first();
+    
+    if (existing) {
+      log.warn("Patient with this phone already exists", { existingId: existing._id });
+      throw new Error("A patient with this phone number already exists");
+    }
+    
+    const patientId = await ctx.db.insert("patients", {
+      teamId: user.teamId,
+      name: args.name,
+      phone: args.phone,
+      notes: args.notes,
+      birthday: args.birthday,
+    });
+    
+    log.info("Created patient", { patientId });
+    
+    return { patientId };
+  },
+});
+
+/**
+ * Delete a patient (only if they have no appointments)
+ */
+export const remove = mutation({
+  args: {
+    userEmail: v.string(),
+    patientId: v.id("patients"),
+  },
+  handler: async (ctx, args) => {
+    const log = createMutationLogger("patients.remove", { 
+      userEmail: args.userEmail,
+      patientId: args.patientId,
+    });
+    
+    // Get user to verify team access
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .unique();
+    
+    if (!user) {
+      log.error("User not found");
+      throw new Error("User not found");
+    }
+    
+    const patient = await ctx.db.get(args.patientId);
+    
+    if (!patient || patient.teamId !== user.teamId) {
+      log.error("Patient not found or not in user's team");
+      throw new Error("Patient not found");
+    }
+    
+    // Check if patient has any appointments
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .filter((q) => q.eq(q.field("patientId"), patient._id))
+      .first();
+    
+    if (appointments) {
+      log.warn("Cannot delete patient with appointments");
+      throw new Error("Cannot delete patient with appointment history. Consider updating their information instead.");
+    }
+    
+    await ctx.db.delete(args.patientId);
+    
+    log.info("Deleted patient");
+    
+    return { success: true };
+  },
+});

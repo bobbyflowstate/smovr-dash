@@ -40,5 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# convex
-/convex/_generated/
+# convex — _generated/ is committed so CI tests can import function references.
+# Re-generate with `npx convex dev` after adding/changing Convex functions.

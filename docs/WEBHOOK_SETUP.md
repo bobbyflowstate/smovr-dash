@@ -107,6 +107,23 @@ To test the webhook integration:
 4. Visit one of the patient response URLs
 5. Check the `/logs` page to verify the action was logged
 
+## Local Mocking (No GoHighLevel Required)
+
+If you just want to develop locally and see what would be sent to GoHighLevel, you can use the built-in mock endpoint:
+
+1. Set this in `.env.local`:
+
+```bash
+GHL_SMS_WEBHOOK_URL=http://localhost:3000/api/dev/mock-sms
+```
+
+2. Start the app locally and schedule/cancel an appointment.
+3. Watch your Next.js server console logs for lines like:
+   - `[mock-sms] Received SMS webhook ...`
+
+**Important**: Convex cron-based reminders run in Convex’s environment and typically cannot reach `localhost`.
+For reminders, use a tunnel (e.g. ngrok/cloudflared) and set `GHL_SMS_WEBHOOK_URL` in Convex to the tunneled URL.
+
 ## Single Appointment Per Patient
 
 The system enforces a one-appointment-per-patient policy (based on phone number). When scheduling a new appointment for a patient who already has a future appointment:

@@ -1,14 +1,12 @@
 import { getLogtoContext } from '@logto/next/server-actions';
 import { logtoConfig } from '../../../logto';
 import { NextRequest, NextResponse } from 'next/server';
-import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
 import { sendCancelWebhook } from '@/lib/webhook-utils';
 import { recordCancellationSmsAttempt } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { createAdminConvexClient } from '@/lib/convex-server';
 
 // GET /api/appointments/[id] - Get appointment details (authenticated)
 export async function GET(
@@ -23,6 +21,7 @@ export async function GET(
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
 
     try {
       const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
@@ -105,6 +104,7 @@ export async function DELETE(
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
+    const convex = createAdminConvexClient();
 
     try {
       // 🔐 Server-side authentication validation

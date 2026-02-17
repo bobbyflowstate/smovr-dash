@@ -12,6 +12,38 @@ interface ClientHeaderProps {
   onSignOut: () => Promise<void>;
 }
 
+function UnreadBadge() {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const response = await fetch('/api/messages/unread-count');
+        if (response.ok) {
+          const data = await response.json();
+          setUnreadCount(data.count || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
+      }
+    };
+
+    fetchUnreadCount();
+    
+    // Poll for updates every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (unreadCount === 0) return null;
+
+  return (
+    <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+      {unreadCount > 99 ? '99+' : unreadCount}
+    </span>
+  );
+}
+
 function TeamLogo({ teamId, teamName }: { teamId?: string | null; teamName?: string | null }) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const imgRef = useRef<HTMLImageElement>(null);
@@ -68,6 +100,7 @@ function TeamLogo({ teamId, teamName }: { teamId?: string | null; teamName?: str
       )}
       
       {imageState === 'loaded' && (
+        /* eslint-disable-next-line @next/next/no-img-element */
         <img
           ref={imgRef}
           src={`/${teamId}.png`}
@@ -102,6 +135,17 @@ export default function ClientHeader({ userName, teamId, teamName, onSignOut }: 
             <li>
               <Link href="/submit" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
                 Submit
+              </Link>
+            </li>
+            <li>
+              <Link href="/patients" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
+                Patients
+              </Link>
+            </li>
+            <li>
+              <Link href="/messages" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium inline-flex items-center">
+                Messages
+                <UnreadBadge />
               </Link>
             </li>
             <li>

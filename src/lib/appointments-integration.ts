@@ -26,6 +26,7 @@ export async function fetchAppointmentsWithFilter(args: {
 export async function recordBookingConfirmationAndMaybeSuppress(args: {
   convex: ConvexClientLike;
   api: any;
+  internalApi: any;
   userEmail: string;
   appointmentId: any;
   patientId: any;
@@ -59,7 +60,8 @@ export async function recordBookingConfirmationAndMaybeSuppress(args: {
   });
 
   if (args.teamId && webhookResult.ok) {
-    await args.convex.mutation(args.api.reminders.markReminderSentIfInWindow, {
+    // markReminderSentIfInWindow is defined as internalMutation in Convex
+    await args.convex.mutation(args.internalApi.reminders.markReminderSentIfInWindow, {
       appointmentId: args.appointmentId,
       patientId: args.patientId,
       appointmentDateTime: args.appointmentDateTime,

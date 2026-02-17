@@ -31,7 +31,12 @@ describe("thin integration: appointments wiring", () => {
     const api = {
       reminders: {
         recordAppointmentSmsAttempt: Symbol("reminders.recordAppointmentSmsAttempt"),
-        markReminderSentIfInWindow: Symbol("reminders.markReminderSentIfInWindow"),
+      },
+    };
+
+    const internalApi = {
+      reminders: {
+        markReminderSentIfInWindow: Symbol("internal.reminders.markReminderSentIfInWindow"),
       },
     };
 
@@ -53,6 +58,7 @@ describe("thin integration: appointments wiring", () => {
     await recordBookingConfirmationAndMaybeSuppress({
       convex,
       api,
+      internalApi,
       userEmail: "dev@example.com",
       appointmentId: "appt1",
       patientId: "pat1",
@@ -80,7 +86,7 @@ describe("thin integration: appointments wiring", () => {
       webhookResult: okResult,
     });
 
-    expect(convex.mutation).toHaveBeenCalledWith(api.reminders.markReminderSentIfInWindow, {
+    expect(convex.mutation).toHaveBeenCalledWith(internalApi.reminders.markReminderSentIfInWindow, {
       appointmentId: "appt1",
       patientId: "pat1",
       appointmentDateTime: "2026-01-01T00:00:00.000Z",
@@ -92,7 +98,12 @@ describe("thin integration: appointments wiring", () => {
     const api = {
       reminders: {
         recordAppointmentSmsAttempt: Symbol("reminders.recordAppointmentSmsAttempt"),
-        markReminderSentIfInWindow: Symbol("reminders.markReminderSentIfInWindow"),
+      },
+    };
+
+    const internalApi = {
+      reminders: {
+        markReminderSentIfInWindow: Symbol("internal.reminders.markReminderSentIfInWindow"),
       },
     };
 
@@ -114,6 +125,7 @@ describe("thin integration: appointments wiring", () => {
     await recordBookingConfirmationAndMaybeSuppress({
       convex,
       api,
+      internalApi,
       userEmail: "dev@example.com",
       appointmentId: "appt1",
       patientId: "pat1",
@@ -125,14 +137,19 @@ describe("thin integration: appointments wiring", () => {
     });
 
     expect(convex.mutation).toHaveBeenCalledWith(api.reminders.recordAppointmentSmsAttempt, expect.anything());
-    expect(convex.mutation).not.toHaveBeenCalledWith(api.reminders.markReminderSentIfInWindow, expect.anything());
+    expect(convex.mutation).not.toHaveBeenCalledWith(internalApi.reminders.markReminderSentIfInWindow, expect.anything());
   });
 
   it("does not suppress when teamId missing (even if webhook ok)", async () => {
     const api = {
       reminders: {
         recordAppointmentSmsAttempt: Symbol("reminders.recordAppointmentSmsAttempt"),
-        markReminderSentIfInWindow: Symbol("reminders.markReminderSentIfInWindow"),
+      },
+    };
+
+    const internalApi = {
+      reminders: {
+        markReminderSentIfInWindow: Symbol("internal.reminders.markReminderSentIfInWindow"),
       },
     };
 
@@ -154,6 +171,7 @@ describe("thin integration: appointments wiring", () => {
     await recordBookingConfirmationAndMaybeSuppress({
       convex,
       api,
+      internalApi,
       userEmail: "dev@example.com",
       appointmentId: "appt1",
       patientId: "pat1",
@@ -165,7 +183,7 @@ describe("thin integration: appointments wiring", () => {
     });
 
     expect(convex.mutation).toHaveBeenCalledWith(api.reminders.recordAppointmentSmsAttempt, expect.anything());
-    expect(convex.mutation).not.toHaveBeenCalledWith(api.reminders.markReminderSentIfInWindow, expect.anything());
+    expect(convex.mutation).not.toHaveBeenCalledWith(internalApi.reminders.markReminderSentIfInWindow, expect.anything());
   });
 
   it("records cancellation sms attempt with correct payload", async () => {
