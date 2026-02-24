@@ -21,13 +21,14 @@ export const scheduleAppointment = mutation({
     // Look up the user by their email (which should be linked to their Logto ID)
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
       log.error("User not found in database");
       throw new Error("User not found in database. Please contact support.");
     }
+    if (!user.teamId) throw new Error("User has no team assigned.");
 
     log.debug("Found user", { userId: user._id });
     const teamId = user.teamId;
@@ -146,24 +147,25 @@ export const listForTeam = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       return [];
     }
+    const teamId = user.teamId;
     
     const patients = await ctx.db
       .query("patients")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect();
     
     // Avoid N+1: fetch upcoming appointments once, then aggregate counts per patient.
     const now = new Date().toISOString();
     const upcomingAppointments = await ctx.db
       .query("appointments")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .filter((q) =>
         q.and(
           q.neq(q.field("status"), "cancelled"),
@@ -205,17 +207,18 @@ export const getWithHistory = query({
     // Get user to verify team access
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       return null;
     }
+    const teamId = user.teamId;
     
     const patient = await ctx.db.get(args.patientId);
     
-    if (!patient || patient.teamId !== user.teamId) {
+    if (!patient || patient.teamId !== teamId) {
       log.error("Patient not found or not in user's team");
       return null;
     }
@@ -223,7 +226,7 @@ export const getWithHistory = query({
     // Get all appointments for this patient
     const appointments = await ctx.db
       .query("appointments")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .filter((q) => q.eq(q.field("patientId"), patient._id))
       .collect();
     
@@ -264,17 +267,18 @@ export const update = mutation({
     // Get user to verify team access
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     const patient = await ctx.db.get(args.patientId);
     
-    if (!patient || patient.teamId !== user.teamId) {
+    if (!patient || patient.teamId !== teamId) {
       log.error("Patient not found or not in user's team");
       throw new Error("Patient not found");
     }
@@ -314,18 +318,19 @@ export const create = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     // Check if patient with this phone already exists in the team
     const existing = await ctx.db
       .query("patients")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .filter((q) => q.eq(q.field("phone"), args.phone))
       .first();
     
@@ -335,7 +340,7 @@ export const create = mutation({
     }
     
     const patientId = await ctx.db.insert("patients", {
-      teamId: user.teamId,
+      teamId,
       name: args.name,
       phone: args.phone,
       notes: args.notes,
@@ -365,17 +370,18 @@ export const remove = mutation({
     // Get user to verify team access
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     const patient = await ctx.db.get(args.patientId);
     
-    if (!patient || patient.teamId !== user.teamId) {
+    if (!patient || patient.teamId !== teamId) {
       log.error("Patient not found or not in user's team");
       throw new Error("Patient not found");
     }
@@ -383,7 +389,7 @@ export const remove = mutation({
     // Check if patient has any appointments
     const appointments = await ctx.db
       .query("appointments")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .filter((q) => q.eq(q.field("patientId"), patient._id))
       .first();
     

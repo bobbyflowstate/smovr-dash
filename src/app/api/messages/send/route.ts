@@ -9,8 +9,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../../logto';
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
 import { internal } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
@@ -33,16 +33,11 @@ export async function POST(request: NextRequest) {
     let createdMessageId: Id<'messages'> | null = null;
     
     try {
-      // Auth check
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
       
       // Parse request body
       const body = await request.json();
@@ -59,9 +54,9 @@ export async function POST(request: NextRequest) {
       log.info('Sending SMS message', { patientId });
       
       // Get patient info for template resolution
-      const patient = await convex.query(api.patients.getById, { 
+      const patient = await fetchQuery(api.patients.getById, { 
         patientId: patientId as Id<'patients'> 
-      });
+      }, { token });
       
       if (!patient) {
         log.warn('Patient not found');
@@ -69,7 +64,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Get user and team info
-      const userInfo = await convex.query(api.users.getUserWithTeam, { userEmail });
+      const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
       if (!userInfo || !userInfo.teamId) {
         log.warn('User has no team');
         return NextResponse.json({ error: 'User has no team' }, { status: 400 });
@@ -81,7 +76,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
       }
       
-      extendContext({ teamId: userInfo.teamId as string });
+      extendContext({ userEmail: userInfo.userEmail, teamId: userInfo.teamId as string });
       
       // Build message context for template resolution
       const messageContext: MessageContext = {
@@ -92,14 +87,14 @@ export async function POST(request: NextRequest) {
       
       // If there's an appointment context, add appointment details
       if (appointmentId) {
-        const appointment = await convex.query(api.appointments.getById, {
+        const appointment = await fetchQuery(api.appointments.getById, {
           appointmentId: appointmentId as Id<'appointments'>,
-        });
+        }, { token });
         
         if (appointment) {
-          const team = await convex.query(api.teams.getById, {
+          const team = await fetchQuery(api.teams.getById, {
             teamId: appointment.teamId,
-          });
+          }, { token });
           
           const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
           const appointmentDate = new Date(appointment.dateTime);
@@ -115,13 +110,13 @@ export async function POST(request: NextRequest) {
       const resolvedBody = resolveTemplatePlaceholders(messageBody, messageContext);
       
       // Create message record (status: pending)
-      const createResult = await convex.mutation(api.messages.createOutboundMessage, {
-        userEmail,
+      const createResult = await fetchMutation(api.messages.createOutboundMessage, {
+        userEmail: "",
         patientId: patientId as Id<'patients'>,
         body: resolvedBody,
         templateId: templateId as Id<'messageTemplates'> | undefined,
         appointmentId: appointmentId as Id<'appointments'> | undefined,
-      });
+      }, { token });
       
       const { messageId, phone, teamId } = createResult;
       createdMessageId = messageId as Id<'messages'>;

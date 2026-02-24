@@ -1,10 +1,9 @@
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../logto';
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../convex/_generated/api';
 import { internal } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { extractDisplayName } from '@/lib/auth-utils';
 import {
   convertComponentsToTimezoneUTC,
 } from '@/lib/timezone-utils';
@@ -29,15 +28,14 @@ export async function GET(request: NextRequest) {
     const convex = createAdminConvexClient();
 
     try {
-      // 🔐 Server-side authentication validation
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      const userEmail = claims.email; // 🔑 Server-controlled user identity
+      const currentUser = await fetchQuery(api.users.currentUser, {}, { token });
+      const userEmail = currentUser?.userEmail || "";
       extendContext({ userEmail });
       
       log.info('Fetching appointments');
@@ -74,38 +72,26 @@ export async function POST(request: NextRequest) {
     const convex = createAdminConvexClient();
 
     try {
-      // 🔐 Server-side authentication validation
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      const userEmail = claims.email; // 🔑 Server-controlled user identity
-      const userName = extractDisplayName(claims);
-      const logtoUserId = claims.sub;
       const body = await request.json();
-      extendContext({ userEmail });
 
       log.info('Creating appointment', { phone: body.phone });
 
-    // Ensure user exists first (also creates team on first run)
-    await convex.mutation(api.users.getOrCreateUserByEmail, {
-      email: userEmail,
-      name: userName,
-      logtoUserId,
-    });
+    await fetchMutation(api.users.ensureTeam, {}, { token });
 
-    // Load team settings (timezone/address) to interpret appointment time correctly
-    const userInfo = await convex.query(api.users.getUserWithTeam, {
-      userEmail,
-    });
+    const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
+    const userEmail = userInfo?.userEmail || "";
+    extendContext({ userEmail });
     if (userInfo?.teamId) {
       extendContext({ teamId: userInfo.teamId as string });
     }
     const team = userInfo?.teamId
-      ? await convex.query(api.teams.getById, { teamId: userInfo.teamId as Id<"teams"> })
+      ? await fetchQuery(api.teams.getById, { teamId: userInfo.teamId as Id<"teams"> }, { token })
       : null;
     const teamTimezone =
       team?.timezone || process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
@@ -150,10 +136,10 @@ export async function POST(request: NextRequest) {
 
     // Check for existing future appointments for this patient (unless user has confirmed cancellation)
     if (!body.skipExistingCheck) {
-      const existingAppointment = await convex.query(api.appointments.getExistingForPatient, {
+      const existingAppointment = await fetchQuery(api.appointments.getExistingForPatient, {
         phone: body.phone,
-        userEmail,
-      });
+        userEmail: "",
+      }, { token });
 
       if (existingAppointment) {
         // Return existing appointment info for frontend confirmation
@@ -173,14 +159,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 🔒 Then create appointment with timezone-converted datetime
-    const result = await convex.mutation(api.patients.scheduleAppointment, {
+    const result = await fetchMutation(api.patients.scheduleAppointment, {
       phone: body.phone,
       name: body.name,
       notes: body.notes,
       appointmentDateTime: timezoneConvertedDateTime,
-      metadata: body.metadata, // Optional JSON metadata
-      userEmail, // 🛡️ Server provides the real user email
-    });
+      metadata: body.metadata,
+      userEmail: "",
+    }, { token });
 
     // userInfo already loaded above
 

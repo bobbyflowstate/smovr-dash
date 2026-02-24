@@ -22,10 +22,22 @@ vi.mock("@/lib/observability", () => ({
   extendContext: vi.fn(),
 }));
 
-vi.mock("@logto/next/server-actions", () => ({
-  getLogtoContext: vi.fn(async () => ({
-    isAuthenticated: true,
-    claims: { email: "staff@example.com" },
+vi.mock("@convex-dev/auth/nextjs/server", () => ({
+  convexAuthNextjsToken: vi.fn(async () => "mock-token"),
+}));
+
+vi.mock("convex/nextjs", () => ({
+  fetchQuery: vi.fn(async () => ({
+    userId: "user_1",
+    userName: "Staff User",
+    userEmail: "staff@example.com",
+    teamId: "team_1",
+    teamName: "Acme Team",
+  })),
+  fetchMutation: vi.fn(async () => ({
+    messageId: "msg_1",
+    phone: "+15551230000",
+    teamId: "team_1",
   })),
 }));
 

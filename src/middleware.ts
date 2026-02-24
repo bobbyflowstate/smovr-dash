@@ -1,30 +1,36 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import {
+  convexAuthNextjsMiddleware,
+  createRouteMatcher,
+  nextjsMiddlewareRedirect,
+} from "@convex-dev/auth/nextjs/server";
 
-export function middleware(request: NextRequest) {
-  // Add the pathname as a header so server components can access it
+const isSignInPage = createRouteMatcher(["/sign-in"]);
+const isProtectedRoute = createRouteMatcher([
+  "/appointments(.*)",
+  "/patients(.*)",
+  "/messages(.*)",
+  "/submit(.*)",
+  "/audit-logs(.*)",
+]);
+
+export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
+  // Preserve x-pathname header for ConditionalLayout
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", request.nextUrl.pathname);
 
+  if (isSignInPage(request) && (await convexAuth.isAuthenticated())) {
+    return nextjsMiddlewareRedirect(request, "/");
+  }
+  if (isProtectedRoute(request) && !(await convexAuth.isAuthenticated())) {
+    return nextjsMiddlewareRedirect(request, "/sign-in");
+  }
+
   return NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
+    request: { headers: requestHeaders },
   });
-}
+});
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
-  ],
+  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
 };
-
-
-

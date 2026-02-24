@@ -23,8 +23,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '@/app/logto';
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery } from "convex/nextjs";
+import { api } from "../../../convex/_generated/api";
 import {
   runWithContext,
   generateRequestId,
@@ -109,12 +110,14 @@ export function withObservability(
         // Enrich context with auth info if requested
         if (enrichAuth) {
           try {
-            const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-            if (isAuthenticated && claims?.email) {
-              extendContext({ userEmail: claims.email });
+            const token = await convexAuthNextjsToken();
+            if (token) {
+              const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
+              if (userInfo?.userEmail) {
+                extendContext({ userEmail: userInfo.userEmail });
+              }
             }
           } catch (authError) {
-            // Auth enrichment is best-effort, don't fail the request
             log.debug('Auth enrichment skipped', { 
               reason: authError instanceof Error ? authError.message : 'unknown error' 
             });

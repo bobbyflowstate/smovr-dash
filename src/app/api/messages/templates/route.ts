@@ -8,14 +8,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../../logto';
-import { ConvexHttpClient } from 'convex/browser';
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { runWithContext, createRequestContext, getLogger } from '@/lib/observability';
 
 export async function GET(request: NextRequest) {
   const ctx = createRequestContext({
@@ -28,15 +25,11 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
       
       const { searchParams } = new URL(request.url);
       const includeInactive = searchParams.get('all') === '1';
@@ -44,8 +37,8 @@ export async function GET(request: NextRequest) {
       log.info('Fetching templates', { includeInactive });
       
       const templates = includeInactive
-        ? await convex.query(api.messageTemplates.getAllTemplates, { userEmail })
-        : await convex.query(api.messageTemplates.getActiveTemplates, { userEmail });
+        ? await fetchQuery(api.messageTemplates.getAllTemplates, { userEmail: "" }, { token })
+        : await fetchQuery(api.messageTemplates.getActiveTemplates, { userEmail: "" }, { token });
       
       log.info('Fetched templates', { count: templates.length });
       return NextResponse.json(templates);
@@ -67,15 +60,11 @@ export async function POST(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
       
       const body = await request.json();
       const { name, body: templateBody, category } = body;
@@ -86,12 +75,12 @@ export async function POST(request: NextRequest) {
       
       log.info('Creating template', { name });
       
-      const templateId = await convex.mutation(api.messageTemplates.create, {
-        userEmail,
+      const templateId = await fetchMutation(api.messageTemplates.create, {
+        userEmail: "",
         name,
         body: templateBody,
         category,
-      });
+      }, { token });
       
       log.info('Created template', { templateId });
       return NextResponse.json({ templateId });
@@ -113,15 +102,11 @@ export async function PATCH(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
       
       const body = await request.json();
       const { templateId, name, body: templateBody, category, isActive, sortOrder } = body;
@@ -132,15 +117,15 @@ export async function PATCH(request: NextRequest) {
       
       log.info('Updating template', { templateId });
       
-      await convex.mutation(api.messageTemplates.update, {
-        userEmail,
+      await fetchMutation(api.messageTemplates.update, {
+        userEmail: "",
         templateId: templateId as Id<'messageTemplates'>,
         name,
         body: templateBody,
         category,
         isActive,
         sortOrder,
-      });
+      }, { token });
       
       log.info('Updated template');
       return NextResponse.json({ ok: true });
@@ -162,15 +147,11 @@ export async function DELETE(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
       
       const { searchParams } = new URL(request.url);
       const templateId = searchParams.get('templateId');
@@ -181,10 +162,10 @@ export async function DELETE(request: NextRequest) {
       
       log.info('Deleting template', { templateId });
       
-      await convex.mutation(api.messageTemplates.remove, {
-        userEmail,
+      await fetchMutation(api.messageTemplates.remove, {
+        userEmail: "",
         templateId: templateId as Id<'messageTemplates'>,
-      });
+      }, { token });
       
       log.info('Deleted template');
       return NextResponse.json({ ok: true });
@@ -194,4 +175,3 @@ export async function DELETE(request: NextRequest) {
     }
   });
 }
-

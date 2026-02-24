@@ -6,14 +6,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../logto';
-import { ConvexHttpClient } from 'convex/browser';
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { runWithContext, createRequestContext, getLogger } from '@/lib/observability';
 
 export async function GET(request: NextRequest) {
   const ctx = createRequestContext({
@@ -26,16 +23,11 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
     
     try {
-      // Auth check
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
       
       const { searchParams } = new URL(request.url);
       const patientId = searchParams.get('patientId');
@@ -46,39 +38,36 @@ export async function GET(request: NextRequest) {
       const limit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
       
       if (patientId) {
-        // Get messages for specific patient
         log.info('Fetching messages for patient', { patientId });
 
         const beforeMessageCreatedAt = beforeParam ? Number(beforeParam) : undefined;
-        const messages = await convex.query(api.messages.getMessagesForPatient, {
-          userEmail,
+        const messages = await fetchQuery(api.messages.getMessagesForPatient, {
+          userEmail: "",
           patientId: patientId as Id<'patients'>,
           limit,
           beforeMessageCreatedAt:
             typeof beforeMessageCreatedAt === 'number' && Number.isFinite(beforeMessageCreatedAt)
               ? beforeMessageCreatedAt
               : undefined,
-        });
+        }, { token });
 
-        // Mark conversation as read only when loading the newest page.
         if (!beforeParam) {
-          await convex.mutation(api.messages.markConversationRead, {
-            userEmail,
+          await fetchMutation(api.messages.markConversationRead, {
+            userEmail: "",
             patientId: patientId as Id<'patients'>,
-          });
+          }, { token });
         }
         
         log.info('Fetched messages', { count: messages.length });
         return NextResponse.json(messages);
       } else {
-        // Get conversations list
         log.info('Fetching conversations');
 
-        const conversations = await convex.query(api.messages.getConversations, {
-          userEmail,
+        const conversations = await fetchQuery(api.messages.getConversations, {
+          userEmail: "",
           limit,
           beforeLastMessageAt: beforeParam || undefined,
-        });
+        }, { token });
         
         log.info('Fetched conversations', { count: conversations.length });
         return NextResponse.json(conversations);
@@ -92,4 +81,3 @@ export async function GET(request: NextRequest) {
     }
   });
 }
-

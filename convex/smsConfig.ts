@@ -43,25 +43,26 @@ export const getForCurrentUser = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.warn("User not found");
+    if (!user || !user.teamId) {
+      log.warn("User not found or no team");
       return null;
     }
+    const teamId = user.teamId;
     
     const config = await ctx.db
       .query("teamSmsConfig")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .first();
     
     if (!config) {
-      log.debug("No SMS config for user", { teamId: user.teamId });
+      log.debug("No SMS config for user", { teamId });
       return null;
     }
 
-    log.debug("Fetched SMS config for user", { found: true, teamId: user.teamId });
+    log.debug("Fetched SMS config for user", { found: true, teamId });
 
     // Redact secrets — clients only need to know whether a secret is configured
     const { inboundWebhookSecret, ...safe } = config;
@@ -95,11 +96,11 @@ export const upsert = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
     
@@ -150,17 +151,18 @@ export const setEnabled = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     const config = await ctx.db
       .query("teamSmsConfig")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .first();
     
     if (!config) {

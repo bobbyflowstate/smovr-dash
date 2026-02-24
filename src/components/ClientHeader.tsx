@@ -9,7 +9,6 @@ interface ClientHeaderProps {
   userName?: string;
   teamId?: string | null;
   teamName?: string | null;
-  onSignOut: () => Promise<void>;
 }
 
 function UnreadBadge() {
@@ -118,7 +117,7 @@ function TeamLogo({ teamId, teamName }: { teamId?: string | null; teamName?: str
   );
 }
 
-export default function ClientHeader({ userName, teamId, teamName, onSignOut }: ClientHeaderProps) {
+export default function ClientHeader({ userName, teamId, teamName }: ClientHeaderProps) {
   return (
     <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
@@ -160,7 +159,7 @@ export default function ClientHeader({ userName, teamId, teamName, onSignOut }: 
           <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
             {userName}
           </span>
-          <SignOut onSignOut={onSignOut} />
+          <SignOut />
         </div>
       </div>
     </header>

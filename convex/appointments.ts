@@ -14,7 +14,7 @@ export const get = query({
     // Look up the user by their email
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
@@ -23,6 +23,7 @@ export const get = query({
     }
 
     log.debug("Found user", { userId: user._id });
+    if (!user.teamId) return [];
     const teamId = user.teamId;
 
     // Get team information
@@ -82,7 +83,7 @@ export const getExistingForPatient = query({
     // Look up the user by their email
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
@@ -90,6 +91,7 @@ export const getExistingForPatient = query({
       return null;
     }
 
+    if (!user.teamId) return null;
     const teamId = user.teamId;
 
     // Find patient by phone number in this team
@@ -156,7 +158,7 @@ export const cancel = mutation({
     // Look up the user by their email
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
 
     if (!user) {
@@ -165,6 +167,7 @@ export const cancel = mutation({
     }
 
     log.debug("Found user", { userId: user._id });
+    if (!user.teamId) throw new Error("User has no team assigned.");
     const teamId = user.teamId;
 
     const appointment = await ctx.db.get(args.id);

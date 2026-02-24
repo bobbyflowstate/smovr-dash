@@ -25,18 +25,19 @@ export const getActiveTemplates = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.warn("User not found");
+    if (!user || !user.teamId) {
+      log.warn("User not found or no team");
       return [];
     }
+    const teamId = user.teamId;
     
     // Get active templates, sorted by sortOrder
     const templates = await ctx.db
       .query("messageTemplates")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect();
     
@@ -61,17 +62,18 @@ export const getAllTemplates = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.warn("User not found");
+    if (!user || !user.teamId) {
+      log.warn("User not found or no team");
       return [];
     }
+    const teamId = user.teamId;
     
     const templates = await ctx.db
       .query("messageTemplates")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect();
     
     // Sort by sortOrder
@@ -105,24 +107,25 @@ export const create = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     // Get current max sortOrder
     const templates = await ctx.db
       .query("messageTemplates")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect();
     
     const maxSortOrder = templates.reduce((max, t) => Math.max(max, t.sortOrder), -1);
     
     const templateId = await ctx.db.insert("messageTemplates", {
-      teamId: user.teamId,
+      teamId,
       name: args.name,
       body: args.body,
       category: args.category,
@@ -157,17 +160,18 @@ export const update = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     // Verify template belongs to user's team
     const template = await ctx.db.get(args.templateId);
-    if (!template || template.teamId !== user.teamId) {
+    if (!template || template.teamId !== teamId) {
       log.error("Template not found or not in user's team");
       throw new Error("Template not found");
     }
@@ -202,17 +206,18 @@ export const remove = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     // Verify template belongs to user's team
     const template = await ctx.db.get(args.templateId);
-    if (!template || template.teamId !== user.teamId) {
+    if (!template || template.teamId !== teamId) {
       log.error("Template not found or not in user's team");
       throw new Error("Template not found");
     }
@@ -236,18 +241,19 @@ export const seedDefaults = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
+    const teamId = user.teamId;
     
     // Check if team already has templates
     const existing = await ctx.db
       .query("messageTemplates")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .first();
     
     if (existing) {
@@ -291,7 +297,7 @@ export const seedDefaults = mutation({
     
     for (const template of defaults) {
       await ctx.db.insert("messageTemplates", {
-        teamId: user.teamId,
+        teamId,
         name: template.name,
         body: template.body,
         category: template.category,

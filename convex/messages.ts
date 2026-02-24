@@ -27,11 +27,11 @@ export const getConversations = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.warn("User not found");
+    if (!user || !user.teamId) {
+      log.warn("User not found or no team");
       return [];
     }
     
@@ -76,17 +76,19 @@ export const getMessagesForPatient = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.warn("User not found");
+    if (!user || !user.teamId) {
+      log.warn("User not found or no team");
       return [];
     }
     
+    const teamId = user.teamId;
+
     // Verify patient belongs to user's team
     const patient = await ctx.db.get(args.patientId);
-    if (!patient || patient.teamId !== user.teamId) {
+    if (!patient || patient.teamId !== teamId) {
       log.warn("Patient not found or not in user's team");
       return [];
     }
@@ -99,7 +101,7 @@ export const getMessagesForPatient = query({
           .query("messages")
           .withIndex("by_team_patient", (q) =>
             q
-              .eq("teamId", user.teamId)
+              .eq("teamId", teamId)
               .eq("patientId", args.patientId)
               .lt("_creationTime", args.beforeMessageCreatedAt!)
           )
@@ -108,7 +110,7 @@ export const getMessagesForPatient = query({
       : await ctx.db
           .query("messages")
           .withIndex("by_team_patient", (q) =>
-            q.eq("teamId", user.teamId).eq("patientId", args.patientId)
+            q.eq("teamId", teamId).eq("patientId", args.patientId)
           )
           .order("desc")
           .take(limit);
@@ -150,17 +152,19 @@ export const getUnreadCount = query({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
+    if (!user || !user.teamId) {
       return 0;
     }
     
+    const teamId = user.teamId;
+
     // Sum unread counts across all conversations
     const conversations = await ctx.db
       .query("conversations")
-      .withIndex("by_team", (q) => q.eq("teamId", user.teamId))
+      .withIndex("by_team", (q) => q.eq("teamId", teamId))
       .collect();
     
     const totalUnread = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0);
@@ -194,17 +198,19 @@ export const createOutboundMessage = mutation({
     // Get user
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
     
+    const teamId = user.teamId;
+
     // Verify patient belongs to user's team
     const patient = await ctx.db.get(args.patientId);
-    if (!patient || patient.teamId !== user.teamId) {
+    if (!patient || patient.teamId !== teamId) {
       log.error("Patient not found or not in user's team");
       throw new Error("Patient not found");
     }
@@ -213,7 +219,7 @@ export const createOutboundMessage = mutation({
     
     // Create message record
     const messageId = await ctx.db.insert("messages", {
-      teamId: user.teamId,
+      teamId,
       patientId: args.patientId,
       appointmentId: args.appointmentId,
       direction: "outbound",
@@ -231,7 +237,7 @@ export const createOutboundMessage = mutation({
     return {
       messageId,
       phone: patient.phone,
-      teamId: user.teamId,
+      teamId,
     };
   },
 });
@@ -362,19 +368,21 @@ export const markConversationRead = mutation({
     // Get user to find their team
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
     
-    if (!user) {
-      log.error("User not found");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found");
     }
     
+    const teamId = user.teamId;
+
     // Find conversation
     const conversation = await ctx.db
       .query("conversations")
       .withIndex("by_team_patient", (q) => 
-        q.eq("teamId", user.teamId).eq("patientId", args.patientId)
+        q.eq("teamId", teamId).eq("patientId", args.patientId)
       )
       .first();
     

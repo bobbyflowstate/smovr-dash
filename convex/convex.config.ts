@@ -1,4 +1,3 @@
-// convex/convex.config.ts
 import { defineApp } from "convex/server";
 import migrations from "@convex-dev/migrations/convex.config";
 

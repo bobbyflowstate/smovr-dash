@@ -1,5 +1,5 @@
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../../logto';
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
@@ -24,33 +24,27 @@ export async function GET(
     const convex = createAdminConvexClient();
 
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      const userEmail = claims.email;
       const appointmentId = params.id as Id<"appointments">;
-      extendContext({ userEmail, appointmentId });
 
       log.info('Fetching appointment details');
 
-      // Get user to find their teamId (enforce multi-tenancy)
-      const userInfo = await convex.query(api.users.getUserWithTeam, {
-        userEmail,
-      });
+      const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
 
       if (!userInfo?.teamId) {
         log.warn('User or team not found');
         return NextResponse.json({ error: 'User or team not found' }, { status: 404 });
       }
-      extendContext({ teamId: userInfo.teamId as string });
+      extendContext({ userEmail: userInfo.userEmail, appointmentId, teamId: userInfo.teamId as string });
 
-      const appointment = await convex.query(api.appointments.getById, {
+      const appointment = await fetchQuery(api.appointments.getById, {
         appointmentId,
-      });
+      }, { token });
 
       if (!appointment || appointment.teamId !== (userInfo.teamId as Id<"teams">)) {
         log.warn('Appointment not found or access denied');
@@ -58,9 +52,9 @@ export async function GET(
       }
       extendContext({ patientId: appointment.patientId as string });
 
-      const patient = await convex.query(api.patients.getById, {
+      const patient = await fetchQuery(api.patients.getById, {
         patientId: appointment.patientId,
-      });
+      }, { token });
 
       const appointmentStatus = (appointment as Record<string, unknown>).status;
       log.info('Appointment details fetched', { 
@@ -107,24 +101,23 @@ export async function DELETE(
     const convex = createAdminConvexClient();
 
     try {
-      // 🔐 Server-side authentication validation
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
+      const token = await convexAuthNextjsToken();
+      if (!token) {
         log.warn('Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      const userEmail = claims.email; // 🔑 Server-controlled user identity
       const appointmentId = params.id as Id<"appointments">;
+
+      const currentUser = await fetchQuery(api.users.currentUser, {}, { token });
+      const userEmail = currentUser?.userEmail || "";
       extendContext({ userEmail, appointmentId });
 
       log.info('Canceling appointment');
 
-      // Get appointment details before canceling (for webhook)
-      const appointment = await convex.query(api.appointments.getById, {
+      const appointment = await fetchQuery(api.appointments.getById, {
         appointmentId,
-      });
+      }, { token });
 
       if (!appointment) {
         log.warn('Appointment not found');
@@ -135,16 +128,14 @@ export async function DELETE(
         patientId: appointment.patientId as string 
       });
 
-      // Get patient details for webhook
-      const patient = await convex.query(api.patients.getById, {
+      const patient = await fetchQuery(api.patients.getById, {
         patientId: appointment.patientId,
-      });
+      }, { token });
 
-      // 🔒 Server calls Convex with validated user email
-      await convex.mutation(api.appointments.cancel, {
+      await fetchMutation(api.appointments.cancel, {
         id: appointmentId,
-        userEmail, // 🛡️ Server provides the real user email
-      });
+        userEmail: "",
+      }, { token });
 
       // 🔗 Send cancel webhook after successful cancellation
       if (patient) {
