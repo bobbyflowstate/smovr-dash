@@ -22,7 +22,7 @@ interface SubmitFormProps {
 
 interface Patient {
   phone: string;
-  name: string;
+  name?: string;
 }
 
 interface ExistingAppointment {
@@ -102,19 +102,19 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
 
   // Filter name suggestions
   const nameMatches = name
-    ? patients.filter(p => p.name.toLowerCase().includes(name.toLowerCase())).slice(0, 5)
+    ? patients.filter(p => p.name?.toLowerCase().includes(name.toLowerCase())).slice(0, 5)
     : [];
 
   // Select from phone dropdown -> auto-fill name
   const selectPhone = (patient: Patient) => {
     setPhone(patient.phone);
-    setName(patient.name);
+    setName(patient.name ?? "");
     setShowPhoneDropdown(false);
   };
 
   // Select from name dropdown -> auto-fill phone
   const selectName = (patient: Patient) => {
-    setName(patient.name);
+    setName(patient.name ?? "");
     setPhone(patient.phone);
     setShowNameDropdown(false);
   };
@@ -309,7 +309,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                     className="px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
                   >
                     <div className="font-medium text-gray-900 dark:text-white">{patient.phone}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">{patient.name}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">{patient.name || "No name"}</div>
                   </div>
                 ))}
               </div>
@@ -346,7 +346,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                     onClick={() => selectName(patient)}
                     className="px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
                   >
-                    <div className="font-medium text-gray-900 dark:text-white">{patient.name}</div>
+                    <div className="font-medium text-gray-900 dark:text-white">{patient.name || "No name"}</div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">{patient.phone}</div>
                   </div>
                 ))}
