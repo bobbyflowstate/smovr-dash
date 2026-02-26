@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { safeErrorMessage } from '@/lib/api-utils';
+import { getAuthenticatedUser, AuthError, safeErrorMessage } from '@/lib/api-utils';
 import { runWithContext, createRequestContext, getLogger } from '@/lib/observability';
 
 /**
@@ -21,11 +20,7 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
 
       const { searchParams } = new URL(request.url);
       const patientId = searchParams.get('id');
@@ -33,7 +28,7 @@ export async function GET(request: NextRequest) {
       if (patientId) {
         log.info('Fetching patient with history', { patientId });
         const patient = await fetchQuery(api.patients.getWithHistory, {
-          userEmail: "",
+          userEmail,
           patientId: patientId as Id<"patients">,
         }, { token });
 
@@ -45,11 +40,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(patient);
       } else {
         log.info('Fetching patients list');
-        const patients = await fetchQuery(api.patients.listForTeam, { userEmail: "" }, { token });
+        const patients = await fetchQuery(api.patients.listForTeam, { userEmail }, { token });
         log.info('Fetched patients', { count: patients.length });
         return NextResponse.json(patients);
       }
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Failed to fetch patients', error);
       return NextResponse.json(
         { error: 'Failed to fetch patients' },
@@ -73,11 +69,7 @@ export async function POST(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
 
       const body = await request.json();
       const { name, phone, notes, birthday } = body;
@@ -92,7 +84,7 @@ export async function POST(request: NextRequest) {
 
       log.info('Creating patient', { phone });
       const result = await fetchMutation(api.patients.create, {
-        userEmail: "",
+        userEmail,
         name,
         phone,
         notes,
@@ -102,6 +94,7 @@ export async function POST(request: NextRequest) {
       log.info('Patient created', { patientId: result.patientId });
       return NextResponse.json(result, { status: 201 });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Failed to create patient', error);
       return NextResponse.json(
         { error: safeErrorMessage(error, 'Failed to create patient') },
@@ -125,11 +118,7 @@ export async function PATCH(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
 
       const body = await request.json();
       const { patientId, name, phone, notes, birthday } = body;
@@ -144,7 +133,7 @@ export async function PATCH(request: NextRequest) {
 
       log.info('Updating patient', { patientId });
       await fetchMutation(api.patients.update, {
-        userEmail: "",
+        userEmail,
         patientId: patientId as Id<"patients">,
         name,
         phone,
@@ -155,6 +144,7 @@ export async function PATCH(request: NextRequest) {
       log.info('Patient updated', { patientId });
       return NextResponse.json({ success: true });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Failed to update patient', error);
       return NextResponse.json(
         { error: safeErrorMessage(error, 'Failed to update patient') },
@@ -178,11 +168,7 @@ export async function DELETE(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
 
       const { searchParams } = new URL(request.url);
       const patientId = searchParams.get('id');
@@ -197,13 +183,14 @@ export async function DELETE(request: NextRequest) {
 
       log.info('Deleting patient', { patientId });
       await fetchMutation(api.patients.remove, {
-        userEmail: "",
+        userEmail,
         patientId: patientId as Id<"patients">,
       }, { token });
 
       log.info('Patient deleted', { patientId });
       return NextResponse.json({ success: true });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Failed to delete patient', error);
       return NextResponse.json(
         { error: safeErrorMessage(error, 'Failed to delete patient') },

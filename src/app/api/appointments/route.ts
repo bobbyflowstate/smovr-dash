@@ -1,4 +1,3 @@
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../convex/_generated/api';
@@ -9,11 +8,11 @@ import {
 } from '@/lib/timezone-utils';
 import { sendScheduleWebhook } from '@/lib/webhook-utils';
 import {
-  fetchAppointmentsWithFilter,
   recordBookingConfirmationAndMaybeSuppress,
 } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { createAdminConvexClient } from '@/lib/convex-server';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 // GET /api/appointments - Get user's appointments
 export async function GET(request: NextRequest) {
@@ -25,17 +24,9 @@ export async function GET(request: NextRequest) {
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
-    const convex = createAdminConvexClient();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-
-      const currentUser = await fetchQuery(api.users.currentUser, {}, { token });
-      const userEmail = currentUser?.userEmail || "";
+      const { token, userEmail } = await getAuthenticatedUser();
       extendContext({ userEmail });
       
       log.info('Fetching appointments');
@@ -43,16 +34,17 @@ export async function GET(request: NextRequest) {
       const { searchParams } = new URL(request.url);
       const includeCancelled = searchParams.get('includeCancelled') === '1';
 
-      const result = await fetchAppointmentsWithFilter({
-        convex,
-        api,
+      const result = await fetchQuery(api.appointments.get, {
         userEmail,
         includeCancelled,
-      });
+      }, { token });
 
-      log.info('Appointments fetched', { count: result.length });
+      log.info('Appointments fetched');
       return NextResponse.json(result);
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to fetch appointments', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -72,11 +64,8 @@ export async function POST(request: NextRequest) {
     const convex = createAdminConvexClient();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail, teamId: authTeamId } = await getAuthenticatedUser();
+      extendContext({ userEmail });
 
       const body = await request.json();
 
@@ -85,8 +74,6 @@ export async function POST(request: NextRequest) {
     await fetchMutation(api.users.ensureTeam, {}, { token });
 
     const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
-    const userEmail = userInfo?.userEmail || "";
-    extendContext({ userEmail });
     if (userInfo?.teamId) {
       extendContext({ teamId: userInfo.teamId as string });
     }
@@ -138,7 +125,7 @@ export async function POST(request: NextRequest) {
     if (!body.skipExistingCheck) {
       const existingAppointment = await fetchQuery(api.appointments.getExistingForPatient, {
         phone: body.phone,
-        userEmail: "",
+        userEmail,
       }, { token });
 
       if (existingAppointment) {
@@ -165,7 +152,7 @@ export async function POST(request: NextRequest) {
       notes: body.notes,
       appointmentDateTime: timezoneConvertedDateTime,
       metadata: body.metadata,
-      userEmail: "",
+      userEmail,
     }, { token });
 
     // userInfo already loaded above
@@ -193,6 +180,9 @@ export async function POST(request: NextRequest) {
         teamName: userInfo?.teamName || "Unknown Team"
       });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to create appointment', error);
       return NextResponse.json({ 
         error: error instanceof Error ? error.message : 'Internal server error' 

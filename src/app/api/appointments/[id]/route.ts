@@ -1,4 +1,3 @@
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../../convex/_generated/api';
@@ -7,6 +6,7 @@ import { sendCancelWebhook } from '@/lib/webhook-utils';
 import { recordCancellationSmsAttempt } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { createAdminConvexClient } from '@/lib/convex-server';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 // GET /api/appointments/[id] - Get appointment details (authenticated)
 export async function GET(
@@ -21,14 +21,9 @@ export async function GET(
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
-    const convex = createAdminConvexClient();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token } = await getAuthenticatedUser();
 
       const appointmentId = params.id as Id<"appointments">;
 
@@ -76,6 +71,9 @@ export async function GET(
           : null,
       });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to fetch appointment', error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : 'Internal server error' },
@@ -101,16 +99,9 @@ export async function DELETE(
     const convex = createAdminConvexClient();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
 
       const appointmentId = params.id as Id<"appointments">;
-
-      const currentUser = await fetchQuery(api.users.currentUser, {}, { token });
-      const userEmail = currentUser?.userEmail || "";
       extendContext({ userEmail, appointmentId });
 
       log.info('Canceling appointment');
@@ -134,7 +125,7 @@ export async function DELETE(
 
       await fetchMutation(api.appointments.cancel, {
         id: appointmentId,
-        userEmail: "",
+        userEmail,
       }, { token });
 
       // 🔗 Send cancel webhook after successful cancellation
@@ -155,6 +146,9 @@ export async function DELETE(
       log.info('Appointment canceled');
       return NextResponse.json({ success: true });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to cancel appointment', error);
       return NextResponse.json({ 
         error: error instanceof Error ? error.message : 'Internal server error' 

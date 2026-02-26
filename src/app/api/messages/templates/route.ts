@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
@@ -25,11 +25,7 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const { searchParams } = new URL(request.url);
       const includeInactive = searchParams.get('all') === '1';
@@ -37,12 +33,13 @@ export async function GET(request: NextRequest) {
       log.info('Fetching templates', { includeInactive });
       
       const templates = includeInactive
-        ? await fetchQuery(api.messageTemplates.getAllTemplates, { userEmail: "" }, { token })
-        : await fetchQuery(api.messageTemplates.getActiveTemplates, { userEmail: "" }, { token });
+        ? await fetchQuery(api.messageTemplates.getAllTemplates, { userEmail }, { token })
+        : await fetchQuery(api.messageTemplates.getActiveTemplates, { userEmail }, { token });
       
       log.info('Fetched templates', { count: templates.length });
       return NextResponse.json(templates);
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error fetching templates', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -60,11 +57,7 @@ export async function POST(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const body = await request.json();
       const { name, body: templateBody, category } = body;
@@ -76,7 +69,7 @@ export async function POST(request: NextRequest) {
       log.info('Creating template', { name });
       
       const templateId = await fetchMutation(api.messageTemplates.create, {
-        userEmail: "",
+        userEmail,
         name,
         body: templateBody,
         category,
@@ -85,6 +78,7 @@ export async function POST(request: NextRequest) {
       log.info('Created template', { templateId });
       return NextResponse.json({ templateId });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error creating template', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -102,11 +96,7 @@ export async function PATCH(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const body = await request.json();
       const { templateId, name, body: templateBody, category, isActive, sortOrder } = body;
@@ -118,7 +108,7 @@ export async function PATCH(request: NextRequest) {
       log.info('Updating template', { templateId });
       
       await fetchMutation(api.messageTemplates.update, {
-        userEmail: "",
+        userEmail,
         templateId: templateId as Id<'messageTemplates'>,
         name,
         body: templateBody,
@@ -130,6 +120,7 @@ export async function PATCH(request: NextRequest) {
       log.info('Updated template');
       return NextResponse.json({ ok: true });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error updating template', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -147,11 +138,7 @@ export async function DELETE(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const { searchParams } = new URL(request.url);
       const templateId = searchParams.get('templateId');
@@ -163,13 +150,14 @@ export async function DELETE(request: NextRequest) {
       log.info('Deleting template', { templateId });
       
       await fetchMutation(api.messageTemplates.remove, {
-        userEmail: "",
+        userEmail,
         templateId: templateId as Id<'messageTemplates'>,
       }, { token });
       
       log.info('Deleted template');
       return NextResponse.json({ ok: true });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error deleting template', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

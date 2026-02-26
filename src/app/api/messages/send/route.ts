@@ -9,7 +9,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
 import { internal } from '../../../../../convex/_generated/api';
@@ -18,7 +17,7 @@ import { getSMSProviderForTeam, getDefaultSMSProvider, resolveTemplatePlaceholde
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { formatAppointmentDateTime } from '@/lib/webhook-utils';
 import { createAdminConvexClient } from '@/lib/convex-server';
-import { safeErrorMessage } from '@/lib/api-utils';
+import { getAuthenticatedUser, AuthError, safeErrorMessage } from '@/lib/api-utils';
 
 export async function POST(request: NextRequest) {
   const ctx = createRequestContext({
@@ -33,11 +32,7 @@ export async function POST(request: NextRequest) {
     let createdMessageId: Id<'messages'> | null = null;
     
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
       
       // Parse request body
       const body = await request.json();
@@ -111,7 +106,7 @@ export async function POST(request: NextRequest) {
       
       // Create message record (status: pending)
       const createResult = await fetchMutation(api.messages.createOutboundMessage, {
-        userEmail: "",
+        userEmail,
         patientId: patientId as Id<'patients'>,
         body: resolvedBody,
         templateId: templateId as Id<'messageTemplates'> | undefined,
@@ -161,6 +156,9 @@ export async function POST(request: NextRequest) {
         providerMessageId: sendResult.messageId,
       });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       if (createdMessageId) {
         try {
           await convex.mutation(internal.messages.updateMessageStatus, {

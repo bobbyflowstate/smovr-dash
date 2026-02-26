@@ -1,8 +1,8 @@
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
-import { fetchQuery, fetchMutation } from "convex/nextjs";
+import { fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../convex/_generated/api';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 // GET /api/users - Get current user and team info
 export async function GET(request: NextRequest) {
@@ -16,34 +16,26 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail, userName, teamId, teamName, userId } = await getAuthenticatedUser();
 
       log.info('Fetching user info');
 
       await fetchMutation(api.users.ensureTeam, {}, { token });
 
-      const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
+      extendContext({ userEmail });
 
-      if (!userInfo) {
-        log.warn('User not found');
-        return NextResponse.json({ error: 'User not found' }, { status: 401 });
-      }
-
-      extendContext({ userEmail: userInfo.userEmail });
-
-      log.info('User info fetched', { teamName: userInfo.teamName });
+      log.info('User info fetched', { teamName });
       return NextResponse.json({
-        userName: userInfo.userName,
-        userEmail: userInfo.userEmail,
-        teamName: userInfo.teamName || "Unknown Team",
-        teamId: userInfo.teamId,
-        userId: userInfo.userId
+        userName,
+        userEmail,
+        teamName: teamName || "Unknown Team",
+        teamId,
+        userId,
       });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to get user info', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

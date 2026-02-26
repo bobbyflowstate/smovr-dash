@@ -8,7 +8,6 @@
  * - POST: Public endpoint for patients clicking links in SMS notifications
  */
 
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
@@ -17,6 +16,7 @@ import { Id } from '../../../../convex/_generated/dataModel';
 import { isValidAuditAction, AUDIT_LOG_MESSAGES, type AuditLogAction } from '@/lib/audit-log-actions';
 import { APPOINTMENT_TIMEZONE, extractComponentsInTimezone } from '@/lib/timezone-utils';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 const DEFAULT_TEAM_CONTACT_PHONE = process.env.DEFAULT_TEAM_CONTACT_PHONE;
@@ -33,11 +33,7 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token } = await getAuthenticatedUser();
       
       log.info('Fetching audit logs');
 
@@ -57,6 +53,9 @@ export async function GET(request: NextRequest) {
       log.info('Audit logs fetched', { count: auditLogs.length });
       return NextResponse.json(auditLogs);
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to fetch audit logs', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

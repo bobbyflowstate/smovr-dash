@@ -10,8 +10,11 @@
 
 import type * as appointments from "../appointments.js";
 import type * as audit_logs from "../audit_logs.js";
+import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as env from "../env.js";
+import type * as http from "../http.js";
+import type * as lib_auth from "../lib/auth.js";
 import type * as lib_logger from "../lib/logger.js";
 import type * as messageTemplates from "../messageTemplates.js";
 import type * as messages from "../messages.js";
@@ -44,8 +47,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   appointments: typeof appointments;
   audit_logs: typeof audit_logs;
+  auth: typeof auth;
   crons: typeof crons;
   env: typeof env;
+  http: typeof http;
+  "lib/auth": typeof lib_auth;
   "lib/logger": typeof lib_logger;
   messageTemplates: typeof messageTemplates;
   messages: typeof messages;

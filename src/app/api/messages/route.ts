@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
@@ -23,11 +23,7 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const token = await convexAuthNextjsToken();
-      if (!token) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const { searchParams } = new URL(request.url);
       const patientId = searchParams.get('patientId');
@@ -42,7 +38,7 @@ export async function GET(request: NextRequest) {
 
         const beforeMessageCreatedAt = beforeParam ? Number(beforeParam) : undefined;
         const messages = await fetchQuery(api.messages.getMessagesForPatient, {
-          userEmail: "",
+          userEmail,
           patientId: patientId as Id<'patients'>,
           limit,
           beforeMessageCreatedAt:
@@ -53,7 +49,7 @@ export async function GET(request: NextRequest) {
 
         if (!beforeParam) {
           await fetchMutation(api.messages.markConversationRead, {
-            userEmail: "",
+            userEmail,
             patientId: patientId as Id<'patients'>,
           }, { token });
         }
@@ -64,7 +60,7 @@ export async function GET(request: NextRequest) {
         log.info('Fetching conversations');
 
         const conversations = await fetchQuery(api.messages.getConversations, {
-          userEmail: "",
+          userEmail,
           limit,
           beforeLastMessageAt: beforeParam || undefined,
         }, { token });
@@ -73,6 +69,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(conversations);
       }
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error fetching messages', error);
       return NextResponse.json(
         { error: 'Internal server error' },

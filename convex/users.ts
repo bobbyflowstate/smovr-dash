@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { createMutationLogger, createQueryLogger } from "./lib/logger";
 
 /**
@@ -12,19 +13,16 @@ export const ensureTeam = mutation({
   handler: async (ctx) => {
     const log = createMutationLogger("users.ensureTeam");
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.email) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       log.error("Not authenticated");
       throw new Error("Not authenticated");
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", identity.email!))
-      .unique();
+    const user = await ctx.db.get(userId);
 
     if (!user) {
-      log.error("User not found in database");
+      log.error("User not found in database", { userId });
       throw new Error("User not found");
     }
 
@@ -36,7 +34,7 @@ export const ensureTeam = mutation({
     log.info("Creating team for user");
 
     const teamId = await ctx.db.insert("teams", {
-      name: `${user.name || identity.name || "User"}'s Team`,
+      name: process.env.DEFAULT_TEAM_NAME || `${user.name || user.email || "User"}'s Team`,
       contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
       timezone: process.env.APPOINTMENT_TIMEZONE,
       hospitalAddress: process.env.HOSPITAL_ADDRESS,
@@ -58,29 +56,27 @@ export const currentUser = query({
   handler: async (ctx) => {
     const log = createQueryLogger("users.currentUser");
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.email) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return null;
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", identity.email!))
-      .unique();
+    const user = await ctx.db.get(userId);
 
     if (!user) {
-      log.debug("User not found in database");
+      log.debug("User not found in database", { userId });
       return null;
     }
 
-    const team = user.teamId ? await ctx.db.get(user.teamId) : null;
+    const teamId = user.teamId;
+    const team = teamId ? await ctx.db.get(teamId) : null;
 
-    log.debug("Found user with team", { userId: user._id, teamId: user.teamId });
+    log.debug("Found user with team", { userId: user._id, teamId });
     return {
       userId: user._id,
       userName: user.name,
       userEmail: user.email,
-      teamId: user.teamId,
+      teamId,
       teamName: team?.name || "Unknown Team",
     };
   },
@@ -104,14 +100,15 @@ export const getUserWithTeam = query({
       return null;
     }
 
-    const team = user.teamId ? await ctx.db.get(user.teamId) : null;
+    const teamId = user.teamId;
+    const team = teamId ? await ctx.db.get(teamId) : null;
 
-    log.debug("Found user with team", { userId: user._id, teamId: user.teamId });
+    log.debug("Found user with team", { userId: user._id, teamId });
     return {
       userId: user._id,
       userName: user.name,
       userEmail: user.email,
-      teamId: user.teamId,
+      teamId,
       teamName: team?.name || "Unknown Team"
     };
   },
