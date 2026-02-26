@@ -52,42 +52,42 @@ vi.mock("@/lib/sms", () => ({
 describe("POST /api/messages/send", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockConvex.query.mockImplementation(async (_fn: unknown, args: Record<string, unknown>) => {
-      if ("patientId" in args) {
-        return {
-          _id: args.patientId,
-          teamId: "team_1",
-          name: "Patient One",
-          phone: "+15551230000",
-        };
-      }
-
-      if ("userEmail" in args) {
-        return {
-          teamId: "team_1",
-          teamName: "Acme Team",
-        };
-      }
-
-      return null;
-    });
-
-    let mutationCall = 0;
-    mockConvex.mutation.mockImplementation(async () => {
-      mutationCall += 1;
-      if (mutationCall === 1) {
-        return {
-          messageId: "msg_1",
-          phone: "+15551230000",
-          teamId: "team_1",
-        };
-      }
-      return null;
-    });
   });
 
   it("marks outbound message failed if provider resolution throws after create", async () => {
+    const { fetchQuery: fq, fetchMutation: fm } = await import("convex/nextjs");
+    const mockFetchQuery = vi.mocked(fq);
+    const mockFetchMutation = vi.mocked(fm);
+
+    const userPayload = {
+      userId: "user_1",
+      userName: "Staff User",
+      userEmail: "staff@example.com",
+      teamId: "team_1",
+      teamName: "Acme Team",
+    };
+
+    // fetchQuery calls in order:
+    // 1. getAuthenticatedUser → api.users.currentUser
+    // 2. route → api.patients.getById
+    // 3. route → api.users.currentUser (for team info)
+    mockFetchQuery
+      .mockResolvedValueOnce(userPayload as never)
+      .mockResolvedValueOnce({
+        _id: "patient_1",
+        teamId: "team_1",
+        name: "Patient One",
+        phone: "+15551230000",
+      } as never)
+      .mockResolvedValueOnce(userPayload as never);
+
+    // fetchMutation: createOutboundMessage
+    mockFetchMutation.mockResolvedValueOnce({
+      messageId: "msg_1",
+      phone: "+15551230000",
+      teamId: "team_1",
+    } as never);
+
     const { POST } = await import("../src/app/api/messages/send/route");
     const request = new NextRequest("http://localhost:3000/api/messages/send", {
       method: "POST",
@@ -103,9 +103,9 @@ describe("POST /api/messages/send", () => {
     const response = await POST(request);
     expect(response.status).toBe(500);
 
-    expect(mockConvex.mutation).toHaveBeenCalledTimes(2);
-    const secondCallArgs = mockConvex.mutation.mock.calls[1][1];
-    expect(secondCallArgs).toMatchObject({
+    // Admin client is used only for updateMessageStatus in the catch block
+    expect(mockConvex.mutation).toHaveBeenCalledTimes(1);
+    expect(mockConvex.mutation.mock.calls[0][1]).toMatchObject({
       messageId: "msg_1",
       status: "failed",
     });
