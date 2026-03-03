@@ -1,12 +1,8 @@
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../logto';
+import { fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
-import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
-import { extractDisplayName, getUserIdentifier } from '@/lib/auth-utils';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 // GET /api/users - Get current user and team info
 export async function GET(request: NextRequest) {
@@ -20,47 +16,26 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
 
     try {
-      // 🔐 Server-side authentication validation
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail, userName, teamId, teamName, userId } = await getAuthenticatedUser();
 
-      const userIdentifier = getUserIdentifier(claims);
-      const userName = extractDisplayName(claims);
-      const logtoUserId = claims.sub;
-
-      if (!userIdentifier) {
-        log.warn('User identifier required');
-        return NextResponse.json({ error: 'User identifier required' }, { status: 400 });
-      }
-
-      extendContext({ userEmail: userIdentifier });
       log.info('Fetching user info');
 
-      // 🔒 Ensure user exists and get team info
-      await convex.mutation(api.users.getOrCreateUserByEmail, {
-        email: userIdentifier,
-        name: userName,
-        logtoUserId,
-      });
+      await fetchMutation(api.users.ensureTeam, {}, { token });
 
-      // Get user with team info
-      const userInfo = await convex.query(api.users.getUserWithTeam, { 
-        userEmail: userIdentifier 
-      });
+      extendContext({ userEmail });
 
-      log.info('User info fetched', { teamName: userInfo?.teamName });
+      log.info('User info fetched', { teamName });
       return NextResponse.json({
-        userName: userInfo?.userName || userName, // Use Convex name, fallback to Logto name
-        userEmail: userIdentifier,
-        teamName: userInfo?.teamName || "Unknown Team",
-        teamId: userInfo?.teamId,
-        userId: userInfo?.userId
+        userName,
+        userEmail,
+        teamName: teamName || "Unknown Team",
+        teamId,
+        userId,
       });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to get user info', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

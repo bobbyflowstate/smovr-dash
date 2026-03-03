@@ -8,8 +8,7 @@
  * - POST: Public endpoint for patients clicking links in SMS notifications
  */
 
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../logto';
+import { fetchQuery } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
@@ -17,6 +16,7 @@ import { Id } from '../../../../convex/_generated/dataModel';
 import { isValidAuditAction, AUDIT_LOG_MESSAGES, type AuditLogAction } from '@/lib/audit-log-actions';
 import { APPOINTMENT_TIMEZONE, extractComponentsInTimezone } from '@/lib/timezone-utils';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 const DEFAULT_TEAM_CONTACT_PHONE = process.env.DEFAULT_TEAM_CONTACT_PHONE;
@@ -33,37 +33,29 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
 
     try {
-      // 🔐 Server-side authentication validation
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-
-      const userEmail = claims.email;
-      extendContext({ userEmail });
+      const { token } = await getAuthenticatedUser();
       
       log.info('Fetching audit logs');
 
-      // Get user to find their teamId
-      const user = await convex.query(api.users.getUserWithTeam, { 
-        userEmail 
-      });
+      const user = await fetchQuery(api.users.currentUser, {}, { token });
 
       if (!user || !user.teamId) {
         log.warn('User or team not found');
         return NextResponse.json({ error: 'User or team not found' }, { status: 404 });
       }
 
-      // 🔒 Get audit logs for user's team only
-      const auditLogs = await convex.query(api.audit_logs.getAuditLogsByTeam, { 
+      extendContext({ userEmail: user.userEmail });
+
+      const auditLogs = await fetchQuery(api.audit_logs.getAuditLogsByTeam, { 
         teamId: user.teamId as Id<"teams">
-      });
+      }, { token });
 
       log.info('Audit logs fetched', { count: auditLogs.length });
       return NextResponse.json(auditLogs);
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to fetch audit logs', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

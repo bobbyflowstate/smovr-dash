@@ -5,13 +5,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../../logto';
-import { ConvexHttpClient } from 'convex/browser';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
+import { fetchQuery } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
-import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { runWithContext, createRequestContext, getLogger } from '@/lib/observability';
 
 export async function GET(request: NextRequest) {
   const ctx = createRequestContext({
@@ -24,23 +21,16 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+      const { token, userEmail } = await getAuthenticatedUser();
       
-      if (!isAuthenticated || !claims?.email) {
-        return NextResponse.json({ count: 0 });
-      }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
-      
-      const count = await convex.query(api.messages.getUnreadCount, { userEmail });
+      const count = await fetchQuery(api.messages.getUnreadCount, { userEmail }, { token });
       
       log.debug('Fetched unread count', { count });
       return NextResponse.json({ count });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ count: 0 }); }
       log.error('Error fetching unread count', error);
       return NextResponse.json({ count: 0 });
     }
   });
 }
-

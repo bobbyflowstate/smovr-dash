@@ -1,38 +1,25 @@
-import { getLogtoContext, signIn, signOut } from '@logto/next/server-actions';
-import SignIn from './sign-in';
-import SignOut from './sign-out';
-import { logtoConfig } from './logto';
-import Link from 'next/link';
-import { extractDisplayName, getUserIdentifier } from '@/lib/auth-utils';
-import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../../convex/_generated/api';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { convexAuthNextjsToken, isAuthenticatedNextjs } from "@convex-dev/auth/nextjs/server";
+import Link from "next/link";
+import { fetchQuery, fetchMutation } from "convex/nextjs";
+import { api } from "../../convex/_generated/api";
+import { globalLogger } from "@/lib/observability";
 
 export default async function Home() {
-  const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+  const isAuthenticated = await isAuthenticatedNextjs();
 
   // Fetch user and team info from Convex database
-  let userName = extractDisplayName(claims);
+  let userName = "User";
   let teamName: string | null = null;
-  
-  if (isAuthenticated && claims) {
-    try {
-      const userEmail = getUserIdentifier(claims);
-      const logtoUserId = claims.sub;
 
-      if (userEmail) {
-        // Ensure user exists in Convex
-        await convex.mutation(api.users.getOrCreateUserByEmail, {
-          email: userEmail,
-          name: userName,
-          logtoUserId,
-        });
+  if (isAuthenticated) {
+    try {
+      const token = await convexAuthNextjsToken();
+      if (token) {
+        // Ensure team exists for the authenticated user
+        await fetchMutation(api.users.ensureTeam, {}, { token });
 
         // Get user with team info
-        const userInfo = await convex.query(api.users.getUserWithTeam, { 
-          userEmail 
-        });
+        const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
 
         if (userInfo) {
           userName = userInfo.userName || userName;
@@ -40,7 +27,7 @@ export default async function Home() {
         }
       }
     } catch (error) {
-      console.error('Home: Error fetching user info:', error);
+      globalLogger.error("Home: Error fetching user info", error);
     }
   }
 
@@ -167,12 +154,12 @@ export default async function Home() {
               </p>
             </div>
             <div className="mt-8">
-              <SignIn
-                onSignIn={async () => {
-                  'use server';
-                  await signIn(logtoConfig);
-                }}
-              />
+              <Link
+                href="/sign-in"
+                className="w-full flex justify-center items-center gap-2 py-3 px-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-white dark:focus:ring-offset-gray-800 hover:shadow-lg transform hover:-translate-y-0.5"
+              >
+                Sign In
+              </Link>
             </div>
           </div>
         </div>

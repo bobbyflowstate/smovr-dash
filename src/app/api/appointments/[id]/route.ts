@@ -1,5 +1,4 @@
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../../logto';
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
@@ -7,6 +6,7 @@ import { sendCancelWebhook } from '@/lib/webhook-utils';
 import { recordCancellationSmsAttempt } from '@/lib/appointments-integration';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { createAdminConvexClient } from '@/lib/convex-server';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
 // GET /api/appointments/[id] - Get appointment details (authenticated)
 export async function GET(
@@ -21,36 +21,25 @@ export async function GET(
 
   return runWithContext(ctx, async () => {
     const log = getLogger();
-    const convex = createAdminConvexClient();
 
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+      const { token } = await getAuthenticatedUser();
 
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-
-      const userEmail = claims.email;
       const appointmentId = params.id as Id<"appointments">;
-      extendContext({ userEmail, appointmentId });
 
       log.info('Fetching appointment details');
 
-      // Get user to find their teamId (enforce multi-tenancy)
-      const userInfo = await convex.query(api.users.getUserWithTeam, {
-        userEmail,
-      });
+      const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
 
       if (!userInfo?.teamId) {
         log.warn('User or team not found');
         return NextResponse.json({ error: 'User or team not found' }, { status: 404 });
       }
-      extendContext({ teamId: userInfo.teamId as string });
+      extendContext({ userEmail: userInfo.userEmail, appointmentId, teamId: userInfo.teamId as string });
 
-      const appointment = await convex.query(api.appointments.getById, {
+      const appointment = await fetchQuery(api.appointments.getById, {
         appointmentId,
-      });
+      }, { token });
 
       if (!appointment || appointment.teamId !== (userInfo.teamId as Id<"teams">)) {
         log.warn('Appointment not found or access denied');
@@ -58,9 +47,9 @@ export async function GET(
       }
       extendContext({ patientId: appointment.patientId as string });
 
-      const patient = await convex.query(api.patients.getById, {
+      const patient = await fetchQuery(api.patients.getById, {
         patientId: appointment.patientId,
-      });
+      }, { token });
 
       const appointmentStatus = (appointment as Record<string, unknown>).status;
       log.info('Appointment details fetched', { 
@@ -82,6 +71,9 @@ export async function GET(
           : null,
       });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to fetch appointment', error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : 'Internal server error' },
@@ -107,24 +99,16 @@ export async function DELETE(
     const convex = createAdminConvexClient();
 
     try {
-      // 🔐 Server-side authentication validation
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+      const { token, userEmail } = await getAuthenticatedUser();
 
-      const userEmail = claims.email; // 🔑 Server-controlled user identity
       const appointmentId = params.id as Id<"appointments">;
       extendContext({ userEmail, appointmentId });
 
       log.info('Canceling appointment');
 
-      // Get appointment details before canceling (for webhook)
-      const appointment = await convex.query(api.appointments.getById, {
+      const appointment = await fetchQuery(api.appointments.getById, {
         appointmentId,
-      });
+      }, { token });
 
       if (!appointment) {
         log.warn('Appointment not found');
@@ -135,16 +119,14 @@ export async function DELETE(
         patientId: appointment.patientId as string 
       });
 
-      // Get patient details for webhook
-      const patient = await convex.query(api.patients.getById, {
+      const patient = await fetchQuery(api.patients.getById, {
         patientId: appointment.patientId,
-      });
+      }, { token });
 
-      // 🔒 Server calls Convex with validated user email
-      await convex.mutation(api.appointments.cancel, {
+      await fetchMutation(api.appointments.cancel, {
         id: appointmentId,
-        userEmail, // 🛡️ Server provides the real user email
-      });
+        userEmail,
+      }, { token });
 
       // 🔗 Send cancel webhook after successful cancellation
       if (patient) {
@@ -164,6 +146,9 @@ export async function DELETE(
       log.info('Appointment canceled');
       return NextResponse.json({ success: true });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
       log.error('Failed to cancel appointment', error);
       return NextResponse.json({ 
         error: error instanceof Error ? error.message : 'Internal server error' 

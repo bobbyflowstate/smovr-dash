@@ -1137,10 +1137,10 @@ export const recordAppointmentSmsAttempt = mutation({
     // Enforce multi-tenancy via userEmail -> teamId.
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
-    if (!user) {
-      log.error("User not found in database");
+    if (!user || !user.teamId) {
+      log.error("User not found or no team");
       throw new Error("User not found in database.");
     }
 
@@ -1345,12 +1345,13 @@ export const getReminderAttemptsForAppointment = query({
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
       .unique();
-    if (!user) throw new Error("User not found in database");
+    if (!user || !user.teamId) throw new Error("User not found in database");
+    const teamId = user.teamId;
 
     const appointment = await ctx.db.get(args.appointmentId);
-    if (!appointment || appointment.teamId !== user.teamId) {
+    if (!appointment || appointment.teamId !== teamId) {
       // Hide existence across teams
       throw new Error("Appointment not found");
     }
@@ -1359,7 +1360,7 @@ export const getReminderAttemptsForAppointment = query({
     const attempts = await ctx.db
       .query("reminderAttempts")
       .withIndex("by_team_appointment", (q) =>
-        q.eq("teamId", user.teamId).eq("appointmentId", args.appointmentId)
+        q.eq("teamId", teamId).eq("appointmentId", args.appointmentId)
       )
       .order("desc")
       .take(limit);

@@ -8,14 +8,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogtoContext } from '@logto/next/server-actions';
-import { logtoConfig } from '../../../logto';
-import { ConvexHttpClient } from 'convex/browser';
+import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
+import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
-
-const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+import { runWithContext, createRequestContext, getLogger } from '@/lib/observability';
 
 export async function GET(request: NextRequest) {
   const ctx = createRequestContext({
@@ -28,15 +25,7 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const { searchParams } = new URL(request.url);
       const includeInactive = searchParams.get('all') === '1';
@@ -44,12 +33,13 @@ export async function GET(request: NextRequest) {
       log.info('Fetching templates', { includeInactive });
       
       const templates = includeInactive
-        ? await convex.query(api.messageTemplates.getAllTemplates, { userEmail })
-        : await convex.query(api.messageTemplates.getActiveTemplates, { userEmail });
+        ? await fetchQuery(api.messageTemplates.getAllTemplates, { userEmail }, { token })
+        : await fetchQuery(api.messageTemplates.getActiveTemplates, { userEmail }, { token });
       
       log.info('Fetched templates', { count: templates.length });
       return NextResponse.json(templates);
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error fetching templates', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -67,15 +57,7 @@ export async function POST(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const body = await request.json();
       const { name, body: templateBody, category } = body;
@@ -86,16 +68,17 @@ export async function POST(request: NextRequest) {
       
       log.info('Creating template', { name });
       
-      const templateId = await convex.mutation(api.messageTemplates.create, {
+      const templateId = await fetchMutation(api.messageTemplates.create, {
         userEmail,
         name,
         body: templateBody,
         category,
-      });
+      }, { token });
       
       log.info('Created template', { templateId });
       return NextResponse.json({ templateId });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error creating template', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -113,15 +96,7 @@ export async function PATCH(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const body = await request.json();
       const { templateId, name, body: templateBody, category, isActive, sortOrder } = body;
@@ -132,7 +107,7 @@ export async function PATCH(request: NextRequest) {
       
       log.info('Updating template', { templateId });
       
-      await convex.mutation(api.messageTemplates.update, {
+      await fetchMutation(api.messageTemplates.update, {
         userEmail,
         templateId: templateId as Id<'messageTemplates'>,
         name,
@@ -140,11 +115,12 @@ export async function PATCH(request: NextRequest) {
         category,
         isActive,
         sortOrder,
-      });
+      }, { token });
       
       log.info('Updated template');
       return NextResponse.json({ ok: true });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error updating template', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -162,15 +138,7 @@ export async function DELETE(request: NextRequest) {
     const log = getLogger();
     
     try {
-      const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
-      
-      if (!isAuthenticated || !claims?.email) {
-        log.warn('Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      
-      const userEmail = claims.email;
-      extendContext({ userEmail });
+      const { token, userEmail } = await getAuthenticatedUser();
       
       const { searchParams } = new URL(request.url);
       const templateId = searchParams.get('templateId');
@@ -181,17 +149,17 @@ export async function DELETE(request: NextRequest) {
       
       log.info('Deleting template', { templateId });
       
-      await convex.mutation(api.messageTemplates.remove, {
+      await fetchMutation(api.messageTemplates.remove, {
         userEmail,
         templateId: templateId as Id<'messageTemplates'>,
-      });
+      }, { token });
       
       log.info('Deleted template');
       return NextResponse.json({ ok: true });
     } catch (error) {
+      if (error instanceof AuthError) { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
       log.error('Error deleting template', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
   });
 }
-

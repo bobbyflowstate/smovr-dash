@@ -1,8 +1,123 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { createMutationLogger, createQueryLogger } from "./lib/logger";
 
-// New app-layer authentication approach
+/**
+ * Ensure the authenticated user has a team assigned.
+ * If the user exists but has no team, creates one.
+ * Called post-login from the frontend.
+ */
+export const ensureTeam = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const log = createMutationLogger("users.ensureTeam");
+
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      log.error("Not authenticated");
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db.get(userId);
+
+    if (!user) {
+      log.error("User not found in database", { userId });
+      throw new Error("User not found");
+    }
+
+    if (user.teamId) {
+      log.debug("User already has a team", { teamId: user.teamId });
+      return user._id;
+    }
+
+    log.info("Creating team for user");
+
+    const teamId = await ctx.db.insert("teams", {
+      name: process.env.DEFAULT_TEAM_NAME || `${user.name || user.email || "User"}'s Team`,
+      contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
+      timezone: process.env.APPOINTMENT_TIMEZONE,
+      hospitalAddress: process.env.HOSPITAL_ADDRESS,
+    });
+
+    await ctx.db.patch(user._id, { teamId });
+
+    log.info("Created team for user", { userId: user._id, teamId });
+    return user._id;
+  },
+});
+
+/**
+ * Get the currently authenticated user's info with team.
+ * Uses ctx.auth.getUserIdentity() -- requires an auth token.
+ */
+export const currentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const log = createQueryLogger("users.currentUser");
+
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return null;
+    }
+
+    const user = await ctx.db.get(userId);
+
+    if (!user) {
+      log.debug("User not found in database", { userId });
+      return null;
+    }
+
+    const teamId = user.teamId;
+    const team = teamId ? await ctx.db.get(teamId) : null;
+
+    log.debug("Found user with team", { userId: user._id, teamId });
+    return {
+      userId: user._id,
+      userName: user.name,
+      userEmail: user.email,
+      teamId,
+      teamName: team?.name || "Unknown Team",
+    };
+  },
+});
+
+export const getUserWithTeam = query({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const log = createQueryLogger("users.getUserWithTeam", { userEmail: args.userEmail });
+    log.debug("Getting user and team info");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", args.userEmail))
+      .unique();
+
+    if (!user) {
+      log.debug("User not found in database");
+      return null;
+    }
+
+    const teamId = user.teamId;
+    const team = teamId ? await ctx.db.get(teamId) : null;
+
+    log.debug("Found user with team", { userId: user._id, teamId });
+    return {
+      userId: user._id,
+      userName: user.name,
+      userEmail: user.email,
+      teamId,
+      teamName: team?.name || "Unknown Team"
+    };
+  },
+});
+
+/**
+ * Legacy: kept for backward compatibility during migration.
+ * New auth flow uses Convex Auth's built-in user creation.
+ */
 export const getOrCreateUserByEmail = mutation({
   args: {
     email: v.string(),
@@ -16,10 +131,9 @@ export const getOrCreateUserByEmail = mutation({
     });
     log.debug("Looking for user");
 
-    // Check if user already exists by email
     const existingUser = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("email", (q) => q.eq("email", args.email))
       .unique();
 
     if (existingUser) {
@@ -29,7 +143,6 @@ export const getOrCreateUserByEmail = mutation({
 
     log.info("Creating new user");
     
-    // Create a new team for the new user
     const teamId = await ctx.db.insert("teams", {
       name: `${args.name}'s Team`,
       contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
@@ -37,93 +150,10 @@ export const getOrCreateUserByEmail = mutation({
       hospitalAddress: process.env.HOSPITAL_ADDRESS,
     });
 
-    // Create the new user
     const newUserId = await ctx.db.insert("users", {
       name: args.name,
       email: args.email,
-      tokenIdentifier: args.logtoUserId, // Store Logto user ID for reference
-      teamId,
-    });
-
-    log.info("Created new user and team", { userId: newUserId, teamId });
-    return newUserId;
-  },
-});
-
-export const getUserWithTeam = query({
-  args: {
-    userEmail: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const log = createQueryLogger("users.getUserWithTeam", { userEmail: args.userEmail });
-    log.debug("Getting user and team info");
-
-    // Look up the user by their email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
-      .unique();
-
-    if (!user) {
-      log.debug("User not found in database");
-      return null;
-    }
-
-    // Get team information
-    const team = await ctx.db.get(user.teamId);
-
-    log.debug("Found user with team", { userId: user._id, teamId: user.teamId });
-    return {
-      userId: user._id,
-      userName: user.name,
-      userEmail: user.email,
-      teamId: user.teamId,
-      teamName: team?.name || "Unknown Team"
-    };
-  },
-});
-
-// Legacy JWT-based mutation (keeping for now but not used)
-export const getOrCreateUser = mutation({
-  handler: async (ctx) => {
-    const log = createMutationLogger("users.getOrCreateUser");
-    
-    const identity = await ctx.auth.getUserIdentity();
-
-    if (!identity) {
-      log.error("User identity not found");
-      throw new Error("User identity not found. Make sure you are logged in.");
-    }
-
-    log.debug("Looking for user by token", { tokenIdentifier: identity.tokenIdentifier });
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier)
-      )
-      .unique();
-
-    if (user !== null) {
-      log.debug("Found existing user", { userId: user._id });
-      return user._id;
-    }
-
-    log.info("Creating new user from identity");
-
-    // Create a new team for the new user
-    const teamId = await ctx.db.insert("teams", {
-      name: `${identity.name}'s Team`,
-      contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
-      timezone: process.env.APPOINTMENT_TIMEZONE,
-      hospitalAddress: process.env.HOSPITAL_ADDRESS,
-    });
-
-    // Create the new user
-    const newUserId = await ctx.db.insert("users", {
-      name: identity.name!,
-      email: identity.email!,
-      tokenIdentifier: identity.tokenIdentifier,
+      tokenIdentifier: args.logtoUserId,
       teamId,
     });
 
