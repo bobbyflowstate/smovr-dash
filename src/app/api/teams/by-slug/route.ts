@@ -4,7 +4,7 @@ import { api } from "../../../../../convex/_generated/api";
 
 /**
  * GET /api/teams/by-slug?slug=xxx — Public endpoint to look up a team by
- * its entrySlug. Returns only the fields the booking page needs.
+ * its entrySlug. Returns only the fields the public pages need.
  */
 export async function GET(request: NextRequest) {
   const slug = request.nextUrl.searchParams.get("slug");
@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      _id: team._id,
       name: team.name,
+      entrySlug: team.entrySlug,
       languageMode: team.languageMode ?? "en_es",
       contactPhone: team.contactPhone,
     });

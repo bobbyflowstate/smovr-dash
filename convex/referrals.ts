@@ -159,10 +159,7 @@ export const updateStatusByToken = mutation({
     status: v.union(v.literal("confirmed"), v.literal("needs_help")),
   },
   handler: async (ctx, args) => {
-    const log = createMutationLogger("referrals.updateStatusByToken", {
-      token: args.token,
-      status: args.status,
-    });
+    const log = createMutationLogger("referrals.updateStatusByToken", { status: args.status });
 
     const referral = await ctx.db
       .query("referrals")
@@ -216,9 +213,17 @@ export const getPendingFollowUps = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const referrals = await ctx.db.query("referrals").collect();
+    const teams = await ctx.db.query("teams").collect();
+    const pendingByTeam = await Promise.all(
+      teams.map((team) =>
+        ctx.db
+          .query("referrals")
+          .withIndex("by_team_status", (q) => q.eq("teamId", team._id).eq("status", "pending"))
+          .collect(),
+      ),
+    );
 
-    return referrals.filter((r) => {
+    return pendingByTeam.flat().filter((r) => {
       if (r.followUpSentAt) return false;
       const delay = (r.followUpDelay ?? 0) * 60 * 1000;
       const sendAfter = new Date(r.createdAt).getTime() + delay;

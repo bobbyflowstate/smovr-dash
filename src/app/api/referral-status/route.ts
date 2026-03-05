@@ -59,7 +59,7 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "status must be 'confirmed' or 'needs_help'" }, { status: 400 });
       }
 
-      log.info("Updating referral status", { token, status });
+      log.info("Updating referral status", { status });
       await fetchMutation(api.referrals.updateStatusByToken, { token, status });
 
       return NextResponse.json({ success: true });

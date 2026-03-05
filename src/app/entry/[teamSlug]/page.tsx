@@ -6,8 +6,8 @@ import { useState, useEffect } from "react";
 type PageState = "loading" | "form" | "submitting" | "success" | "error" | "not-found";
 
 interface TeamInfo {
-  _id: string;
   name: string;
+  entrySlug?: string;
   languageMode: string;
   contactPhone?: string;
 }
@@ -34,7 +34,7 @@ export default function EntryPage() {
           return;
         }
         const data = await res.json();
-        if (!data || !data._id) {
+        if (!data || !data.entrySlug) {
           setState("not-found");
           return;
         }
@@ -58,7 +58,7 @@ export default function EntryPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          teamId: team._id,
+          teamSlug: team.entrySlug ?? teamSlug,
           patientName: name.trim() || undefined,
           patientPhone: phone.trim(),
           _hp: hpField || undefined,

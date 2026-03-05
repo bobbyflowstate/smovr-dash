@@ -45,6 +45,7 @@ export const createPublic = mutation({
       .filter((q) =>
         q.and(
           q.eq(q.field("patientPhone"), normalizedPhone),
+          q.eq(q.field("status"), "pending"),
           q.gte(q.field("createdAt"), windowStart),
         ),
       )

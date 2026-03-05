@@ -40,43 +40,66 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       }
 
-      const { teamId, patientName, patientPhone } = body as {
-        teamId: string;
+      const { teamSlug, patientName, patientPhone } = body as {
+        teamSlug?: string;
+        teamId?: string;
         patientName?: string;
         patientPhone?: string;
       };
+      const legacyTeamId = (body as { teamId?: string }).teamId;
 
-      if (!teamId || !patientPhone) {
+      if ((!teamSlug && !legacyTeamId) || !patientPhone) {
         return NextResponse.json(
-          { error: "Team ID and phone number are required" },
+          { error: "Team slug (or legacy teamId) and phone number are required" },
           { status: 400 },
         );
       }
 
-      log.info("Processing website entry", { teamId, source: "website_button" });
+      log.info("Processing website entry", { teamSlug, source: "website_button" });
 
       const convex = createAdminConvexClient();
+      const allowLegacyTeamId = process.env.ALLOW_LEGACY_PUBLIC_TEAM_ID === "true";
+      const team = teamSlug
+        ? await convex.query(api.teams.getByEntrySlug, { slug: teamSlug })
+        : allowLegacyTeamId && legacyTeamId
+          ? await convex.query(api.teams.getById, { teamId: legacyTeamId as Id<"teams"> })
+          : null;
+
+      if (!teamSlug && legacyTeamId) {
+        if (allowLegacyTeamId) {
+          log.warn("Using legacy teamId payload for public entry route", {
+            source: "website_button",
+          });
+        } else {
+          return NextResponse.json(
+            { error: "Legacy teamId payload is disabled. Send teamSlug instead." },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (!team) {
+        return NextResponse.json({ error: "Team not found" }, { status: 404 });
+      }
+      const teamId = team._id;
 
       const result = await convex.mutation(api.schedulingRequests.createPublic, {
-        teamId: teamId as Id<"teams">,
+        teamId,
         patientPhone,
         patientName: patientName || undefined,
         source: "website_button",
       });
 
       try {
-        const team = await convex.query(api.teams.getById, {
-          teamId: teamId as Id<"teams">,
-        });
-        const languageMode: LanguageMode = (team?.languageMode as LanguageMode) ?? "en_es";
+        const languageMode: LanguageMode = (team.languageMode as LanguageMode) ?? "en_es";
         const message = formatWebsiteEntryMessage(patientName || null, languageMode);
 
         const phone = normalizePhone(patientPhone);
-        const provider = await resolveSMSProvider(convex, teamId as Id<"teams">);
+        const provider = await resolveSMSProvider(convex, teamId);
         const smsResult = await provider.sendMessage({ to: phone, body: message });
 
         await convex.mutation(internal.messages.createSystemMessageInternal, {
-          teamId: teamId as Id<"teams">,
+          teamId,
           patientId: result.patientId,
           phone,
           body: message,
@@ -85,9 +108,9 @@ export async function POST(request: NextRequest) {
           errorMessage: smsResult.error ?? undefined,
         });
 
-        await convex.mutation(internal.audit_logs.createAuditLog, {
+        await convex.mutation(api.audit_logs.createAuditLog, {
           patientId: result.patientId,
-          teamId: teamId as Id<"teams">,
+          teamId,
           action: "website_entry",
           message: `Website entry from ${patientName || "visitor"} (${patientPhone})`,
         });

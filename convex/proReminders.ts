@@ -45,10 +45,28 @@ export const getPatientsWithBirthday = internalQuery({
     const patients = await ctx.db
       .query("patients")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
-      .filter((q) => q.eq(q.field("birthday"), args.todayMMDD))
       .collect();
-    log.debug("Found birthday patients", { count: patients.length, todayMMDD: args.todayMMDD });
-    return patients;
+
+    const matchesBirthday = (birthday?: string): boolean => {
+      if (!birthday) return false;
+      const parts = birthday.split("-");
+      if (parts.length === 2) {
+        return birthday === args.todayMMDD;
+      }
+      // Legacy format support: YYYY-MM-DD
+      if (parts.length === 3) {
+        const mmdd = `${parts[1]}-${parts[2]}`;
+        return mmdd === args.todayMMDD;
+      }
+      return false;
+    };
+
+    const birthdayPatients = patients.filter((p) => matchesBirthday(p.birthday));
+    log.debug("Found birthday patients", {
+      count: birthdayPatients.length,
+      todayMMDD: args.todayMMDD,
+    });
+    return birthdayPatients;
   },
 });
 
@@ -573,6 +591,20 @@ export const getPatientById = internalQuery({
   handler: async (ctx, args) => ctx.db.get(args.patientId),
 });
 
+export const getPatientByIdForTeam = internalQuery({
+  args: {
+    patientId: v.id("patients"),
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient || patient.teamId !== args.teamId) {
+      return null;
+    }
+    return patient;
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Lapsed patient reactivation action
 // ---------------------------------------------------------------------------
@@ -617,9 +649,12 @@ export const sendReactivationMessages = internalAction({
     let failed = 0;
 
     for (const patientId of args.patientIds) {
-      const patient = await ctx.runQuery(internal.proReminders.getPatientById, { patientId });
+      const patient = await ctx.runQuery(internal.proReminders.getPatientByIdForTeam, {
+        patientId,
+        teamId: args.teamId,
+      });
       if (!patient) {
-        log.warn("Patient not found, skipping", { patientId });
+        log.warn("Patient not found in team, skipping", { patientId, teamId: args.teamId });
         failed++;
         continue;
       }

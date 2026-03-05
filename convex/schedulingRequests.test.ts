@@ -128,6 +128,42 @@ describe("schedulingRequests.createPublic rate limiting", () => {
     const all = await asSmith.query(api.schedulingRequests.listForTeam, {});
     expect(all).toHaveLength(5);
   });
+
+  it("counts only pending requests toward the rate limit", async () => {
+    const t = convexTest(schema, modules);
+    const { teamId } = await seedTeamAndUser(t);
+    const phone = "5552222222";
+
+    const first = await t.mutation(api.schedulingRequests.createPublic, {
+      teamId,
+      patientPhone: phone,
+      source: "booking_page",
+    });
+    await t.mutation(api.schedulingRequests.createPublic, {
+      teamId,
+      patientPhone: phone,
+      source: "booking_page",
+    });
+    await t.mutation(api.schedulingRequests.createPublic, {
+      teamId,
+      patientPhone: phone,
+      source: "booking_page",
+    });
+
+    const asSmith = t.withIdentity({ email: "smith@acme.test" });
+    await asSmith.mutation(api.schedulingRequests.resolve, {
+      requestId: first.requestId,
+      status: "scheduled",
+    });
+
+    // Should be allowed because only 2 requests remain pending in the window.
+    const fourth = await t.mutation(api.schedulingRequests.createPublic, {
+      teamId,
+      patientPhone: phone,
+      source: "booking_page",
+    });
+    expect(fourth.requestId).toBeDefined();
+  });
 });
 
 describe("schedulingRequests.listForTeam", () => {
