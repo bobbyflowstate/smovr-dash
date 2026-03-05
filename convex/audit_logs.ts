@@ -12,10 +12,10 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { createMutationLogger, createQueryLogger } from "./lib/logger";
 
-// Create an audit log entry (prevents duplicates)
+// Create an audit log entry (prevents duplicates for appointment-scoped actions)
 export const createAuditLog = mutation({
   args: {
-    appointmentId: v.id("appointments"),
+    appointmentId: v.optional(v.id("appointments")),
     patientId: v.id("patients"),
     action: v.string(),
     message: v.string(),
@@ -27,21 +27,20 @@ export const createAuditLog = mutation({
       action: args.action,
     });
 
-    // Check if a log already exists for this appointment + action combination
-    const existingLog = await ctx.db
-      .query("logs")
-      .withIndex("by_appointment_action", (q) => 
-        q.eq("appointmentId", args.appointmentId).eq("action", args.action)
-      )
-      .first();
+    if (args.appointmentId) {
+      const existingLog = await ctx.db
+        .query("logs")
+        .withIndex("by_appointment_action", (q) => 
+          q.eq("appointmentId", args.appointmentId!).eq("action", args.action)
+        )
+        .first();
 
-    // If log already exists, return the existing log ID
-    if (existingLog) {
-      log.info("Duplicate audit log detected, returning existing", { existingLogId: existingLog._id });
-      return existingLog._id;
+      if (existingLog) {
+        log.info("Duplicate audit log detected, returning existing", { existingLogId: existingLog._id });
+        return existingLog._id;
+      }
     }
 
-    // Create new log entry
     const logId = await ctx.db.insert("logs", {
       appointmentId: args.appointmentId,
       patientId: args.patientId,
@@ -74,11 +73,12 @@ export const getAuditLogsByTeam = query({
     // Sort by timestamp descending (newest first)
     logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    // Enrich logs with patient and appointment data
     const enrichedLogs = await Promise.all(
       logs.map(async (auditLog) => {
         const patient = await ctx.db.get(auditLog.patientId);
-        const appointment = await ctx.db.get(auditLog.appointmentId);
+        const appointment = auditLog.appointmentId
+          ? await ctx.db.get(auditLog.appointmentId)
+          : null;
         
         return {
           _id: auditLog._id,
@@ -88,7 +88,7 @@ export const getAuditLogsByTeam = query({
           message: auditLog.message,
           patientPhone: patient?.phone || "Unknown",
           patientName: patient?.name || "Unknown",
-          appointmentDateTime: appointment?.dateTime || "Unknown",
+          appointmentDateTime: appointment?.dateTime || null,
           appointmentId: auditLog.appointmentId,
           patientId: auditLog.patientId,
         };

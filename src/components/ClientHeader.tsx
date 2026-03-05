@@ -148,8 +148,18 @@ export default function ClientHeader({ userName, teamId, teamName }: ClientHeade
               </Link>
             </li>
             <li>
+              <Link href="/requests" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
+                Requests
+              </Link>
+            </li>
+            <li>
               <Link href="/audit-logs" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
                 Audit Logs
+              </Link>
+            </li>
+            <li>
+              <Link href="/settings" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-medium">
+                Settings
               </Link>
             </li>
           </ul>

@@ -6,7 +6,9 @@ import {
   formatScheduleMessage,
   formatCancelMessage,
   formatAppointmentDateTime,
+  getSchedulingLink,
   type SMSWebhookResult,
+  type LanguageMode,
 } from '../../convex/webhook_utils';
 
 // Re-export for use in other parts of the app
@@ -91,6 +93,7 @@ export async function sendScheduleWebhook(
 
     const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || FALLBACK_TIMEZONE;
     const hospitalAddress = team?.hospitalAddress || FALLBACK_HOSPITAL_ADDRESS;
+    const languageMode: LanguageMode = (team?.languageMode as LanguageMode) ?? "en_es";
 
     // Parse appointment date/time
     const appointmentDate = new Date(appointment.dateTime);
@@ -99,6 +102,7 @@ export async function sendScheduleWebhook(
     const patientName = patient?.name || name || null;
     
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const schedulingLink = getSchedulingLink(team, baseUrl);
     
     // Format message using shared formatter
     message = formatScheduleMessage(
@@ -107,7 +111,9 @@ export async function sendScheduleWebhook(
       appointmentId,
       baseUrl,
       timezone,
-      hospitalAddress
+      hospitalAddress,
+      languageMode,
+      schedulingLink,
     );
     
     // Send SMS using team-based provider abstraction
@@ -166,6 +172,7 @@ export async function sendCancelWebhook(
       : null;
     const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || FALLBACK_TIMEZONE;
     const hospitalAddress = team?.hospitalAddress || FALLBACK_HOSPITAL_ADDRESS;
+    const languageMode: LanguageMode = (team?.languageMode as LanguageMode) ?? "en_es";
 
     // Parse appointment date/time
     const appointmentDate = new Date(appointmentDateTime);
@@ -174,7 +181,7 @@ export async function sendCancelWebhook(
     const patientName = name || null;
     
     // Format message using shared formatter
-    const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress);
+    const message = formatCancelMessage(patientName, appointmentDate, timezone, hospitalAddress, languageMode);
     
     // Send SMS using team-based provider abstraction
     const teamId = appointment?.teamId ?? null;

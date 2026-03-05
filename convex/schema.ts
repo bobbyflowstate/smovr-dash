@@ -25,13 +25,17 @@ export default defineSchema({
     contactPhone: v.optional(v.string()),
     timezone: v.optional(v.string()), // IANA timezone, e.g. "America/Phoenix"
     hospitalAddress: v.optional(v.string()), // Included in SMS messages
+    languageMode: v.optional(v.union(v.literal("en"), v.literal("en_es"))), // default "en_es"
+    rescheduleUrl: v.optional(v.string()), // overrides default /book/[slug] scheduling link
+    entrySlug: v.optional(v.string()), // unique slug for /entry/[slug] website button URL
   }),
 
   patients: defineTable({
     phone: v.string(),
     name: v.optional(v.string()),
     notes: v.optional(v.string()),
-    birthday: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
+    birthday: v.optional(v.string()), // MM-DD (month and day only)
+    recommendedReturnDate: v.optional(v.string()), // ISO date YYYY-MM-DD
     teamId: v.id("teams"),
   })
     .index("by_phone", ["phone"])
@@ -80,16 +84,61 @@ export default defineSchema({
     .index("by_team_appointment", ["teamId", "appointmentId"]),
 
   logs: defineTable({
-    appointmentId: v.id("appointments"),
+    appointmentId: v.optional(v.id("appointments")),
     patientId: v.id("patients"),
-    action: v.string(), // "15-late", "30-late", "reschedule-cancel"
-    message: v.string(), // Human-readable message
+    action: v.string(), // "15-late", "30-late", "reschedule-cancel", "referral_confirmed", "referral_needs_help", "website_entry", "reactivation_sent"
+    message: v.string(),
     teamId: v.id("teams"),
     timestamp: v.string(), // ISO timestamp
   })
     .index("by_team", ["teamId"])
     .index("by_appointment", ["appointmentId"])
     .index("by_appointment_action", ["appointmentId", "action"]),
+
+  // ============================================
+  // Referrals
+  // ============================================
+
+  referrals: defineTable({
+    patientId: v.id("patients"),
+    teamId: v.id("teams"),
+    referralName: v.optional(v.string()),
+    referralAddress: v.optional(v.string()),
+    referralPhone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("confirmed"), v.literal("needs_help")),
+    statusUpdatedAt: v.optional(v.string()), // ISO timestamp
+    followUpSentAt: v.optional(v.string()), // ISO timestamp
+    followUpDelay: v.optional(v.number()), // minutes before follow-up is sent (0 = immediate)
+    token: v.string(), // unique token for /referral-status/[token] landing page
+    createdAt: v.string(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_patient", ["patientId"])
+    .index("by_token", ["token"])
+    .index("by_team_status", ["teamId", "status"]),
+
+  // ============================================
+  // Scheduling Requests
+  // ============================================
+
+  schedulingRequests: defineTable({
+    patientId: v.optional(v.id("patients")),
+    teamId: v.id("teams"),
+    source: v.union(
+      v.literal("booking_page"),
+      v.literal("website_button"),
+      v.literal("reactivation"),
+    ),
+    status: v.union(v.literal("pending"), v.literal("scheduled"), v.literal("dismissed")),
+    patientName: v.optional(v.string()),
+    patientPhone: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    resolvedAt: v.optional(v.string()),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_status", ["teamId", "status"]),
 
   // ============================================
   // Two-Way SMS Messaging

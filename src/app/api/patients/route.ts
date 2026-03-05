@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       const { token, userEmail } = await getAuthenticatedUser();
 
       const body = await request.json();
-      const { name, phone, notes, birthday } = body;
+      const { name, phone, notes, birthday, recommendedReturnDate } = body;
 
       if (!name || !phone) {
         log.warn('Missing required fields', { hasName: !!name, hasPhone: !!phone });
@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
         phone,
         notes,
         birthday,
+        recommendedReturnDate,
       }, { token });
 
       log.info('Patient created', { patientId: result.patientId });
@@ -121,7 +122,7 @@ export async function PATCH(request: NextRequest) {
       const { token, userEmail } = await getAuthenticatedUser();
 
       const body = await request.json();
-      const { patientId, name, phone, notes, birthday } = body;
+      const { patientId, name, phone, notes, birthday, recommendedReturnDate } = body;
 
       if (!patientId) {
         log.warn('Missing patient ID');
@@ -139,6 +140,7 @@ export async function PATCH(request: NextRequest) {
         phone,
         notes,
         birthday,
+        recommendedReturnDate,
       }, { token });
 
       log.info('Patient updated', { patientId });

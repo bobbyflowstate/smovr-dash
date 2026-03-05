@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
-const PATIENT_LANDING_ROUTES = ["/15-late", "/30-late", "/reschedule-cancel"];
+const PATIENT_LANDING_ROUTES = ["/15-late", "/30-late", "/reschedule-cancel", "/book", "/entry", "/referral-status"];
 
 export default async function ConditionalLayout({
   children,

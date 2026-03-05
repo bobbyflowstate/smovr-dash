@@ -46,9 +46,23 @@ export const backfillAppointmentStatus = migrations.define({
   },
 });
 
+// Convert birthday from YYYY-MM-DD to MM-DD (month+day only).
+export const migrateBirthdayToMonthDay = migrations.define({
+  table: "patients",
+  migrateOne: async (_ctx, patient) => {
+    const p = patient as any;
+    if (p.birthday && p.birthday.length === 10 && p.birthday[4] === "-") {
+      const mmdd = p.birthday.slice(5); // "YYYY-MM-DD" → "MM-DD"
+      return { ...p, birthday: mmdd };
+    }
+    return p;
+  },
+});
+
 // Runner for all migrations
 export const runAll = migrations.runner([
   internal.migrations.removePatientNames,
   internal.migrations.backfillTeamSettings,
   internal.migrations.backfillAppointmentStatus,
+  internal.migrations.migrateBirthdayToMonthDay,
 ]);
