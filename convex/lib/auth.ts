@@ -1,5 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 type AuthCtx = QueryCtx | MutationCtx;
 
@@ -10,15 +11,12 @@ type AuthCtx = QueryCtx | MutationCtx;
 export async function getAuthenticatedUser(
   ctx: AuthCtx
 ): Promise<Doc<"users"> & { teamId: Id<"teams"> }> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.email) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) {
     throw new Error("Not authenticated");
   }
 
-  const user = await ctx.db
-    .query("users")
-    .withIndex("email", (q) => q.eq("email", identity.email!))
-    .unique();
+  const user = await ctx.db.get(userId);
 
   if (!user) {
     throw new Error("User not found");
@@ -37,15 +35,12 @@ export async function getAuthenticatedUser(
 export async function tryGetAuthenticatedUser(
   ctx: AuthCtx
 ): Promise<(Doc<"users"> & { teamId: Id<"teams"> }) | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.email) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) {
     return null;
   }
 
-  const user = await ctx.db
-    .query("users")
-    .withIndex("email", (q) => q.eq("email", identity.email!))
-    .unique();
+  const user = await ctx.db.get(userId);
 
   if (!user || !user.teamId) {
     return null;
