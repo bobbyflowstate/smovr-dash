@@ -228,9 +228,9 @@ export default function AuditLogsClient() {
                       {auditLog.patientPhone}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {isValidDate(auditLog.appointmentDateTime) 
+                      {auditLog.appointmentDateTime && isValidDate(auditLog.appointmentDateTime) 
                         ? formatDateTimeInAppointmentTimezone(new Date(auditLog.appointmentDateTime))
-                        : auditLog.appointmentDateTime || "Unknown"}
+                        : auditLog.appointmentDateTime || "—"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

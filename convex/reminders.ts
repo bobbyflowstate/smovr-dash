@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult } from "./webhook_utils";
+import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, getSchedulingLink, type SMSWebhookResult, type LanguageMode } from "./webhook_utils";
 import type { TeamSmsConfig } from "./sms_factory";
 import {
   REMINDER_WINDOWS_HOURS,
@@ -56,6 +56,8 @@ async function sendReminder24hWebhook(
   timezone: string,
   hospitalAddress: string,
   teamSmsConfig?: TeamSmsConfig | null,
+  languageMode: LanguageMode = "en_es",
+  schedulingLink?: string | null,
 ): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder24hWebhook", { appointmentId, patientPhone });
   
@@ -78,7 +80,9 @@ async function sendReminder24hWebhook(
       appointmentId,
       BASE_URL,
       timezone,
-      hospitalAddress
+      hospitalAddress,
+      languageMode,
+      schedulingLink,
     );
     
     // Send SMS via pluggable provider (team config → env fallback)
@@ -108,6 +112,8 @@ async function sendReminder1hWebhook(
   timezone: string,
   hospitalAddress: string,
   teamSmsConfig?: TeamSmsConfig | null,
+  languageMode: LanguageMode = "en_es",
+  schedulingLink?: string | null,
 ): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder1hWebhook", { appointmentId, patientPhone });
   
@@ -130,7 +136,9 @@ async function sendReminder1hWebhook(
       appointmentId,
       BASE_URL,
       timezone,
-      hospitalAddress
+      hospitalAddress,
+      languageMode,
+      schedulingLink,
     );
     
     // Send SMS via pluggable provider (team config → env fallback)
@@ -323,6 +331,8 @@ export const checkAndSendReminders = internalAction({
         }
         const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
         const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+        const languageMode: LanguageMode = team?.languageMode ?? "en_es";
+        const schedulingLink = BASE_URL ? getSchedulingLink(team, BASE_URL) : null;
 
         // Load team SMS config for provider selection
         if (!smsConfigCache.has(teamIdStr)) {
@@ -456,6 +466,8 @@ export const checkAndSendReminders = internalAction({
                   timezone,
                   hospitalAddress,
                   teamSmsConfig,
+                  languageMode,
+                  schedulingLink,
                 );
 
                 if (result.ok) {
@@ -648,6 +660,8 @@ export const checkAndSendReminders = internalAction({
                   timezone,
                   hospitalAddress,
                   teamSmsConfig,
+                  languageMode,
+                  schedulingLink,
                 );
 
                 if (result.ok) {
@@ -836,6 +850,8 @@ export const testCheckReminders = internalAction({
           }
           const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
           const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+          const languageMode: LanguageMode = team?.languageMode ?? "en_es";
+          const schedulingLink = BASE_URL ? getSchedulingLink(team, BASE_URL) : null;
 
           // Load team SMS config for provider selection
           if (!smsConfigCache2.has(teamIdStr)) {
@@ -895,6 +911,8 @@ export const testCheckReminders = internalAction({
                   timezone,
                   hospitalAddress,
                   teamSmsConfig,
+                  languageMode,
+                  schedulingLink,
                 );
 
                 // Only record reminder if it was sent successfully
@@ -980,6 +998,8 @@ export const testCheckReminders = internalAction({
                   timezone,
                   hospitalAddress,
                   teamSmsConfig,
+                  languageMode,
+                  schedulingLink,
                 );
 
                 // Only record reminder if it was sent successfully
@@ -1369,13 +1389,14 @@ export const getReminderAttemptsForAppointment = query({
 });
 
 /**
- * Mutation: Record that a reminder was sent
+ * Mutation: Record that a reminder was sent.
+ * appointmentId is optional for non-appointment reminders (e.g. birthday).
  */
 export const recordReminderSent = internalMutation({
   args: {
-    appointmentId: v.id("appointments"),
+    appointmentId: v.optional(v.id("appointments")),
     patientId: v.id("patients"),
-    reminderType: v.union(v.literal("24h"), v.literal("1h"), v.literal("birthday")),
+    reminderType: v.union(v.literal("24h"), v.literal("1h"), v.literal("birthday"), v.literal("return_30d"), v.literal("return_7d")),
     targetDate: v.string(),
     teamId: v.id("teams"),
   },

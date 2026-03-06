@@ -256,7 +256,8 @@ export const update = mutation({
     name: v.optional(v.string()),
     phone: v.optional(v.string()),
     notes: v.optional(v.string()),
-    birthday: v.optional(v.string()), // ISO date string (YYYY-MM-DD) or empty string to clear
+    birthday: v.optional(v.string()), // MM-DD (month and day only) or empty string to clear
+    recommendedReturnDate: v.optional(v.string()), // YYYY-MM-DD or empty string to clear
   },
   handler: async (ctx, args) => {
     const log = createMutationLogger("patients.update", { 
@@ -288,7 +289,8 @@ export const update = mutation({
     if (args.name !== undefined) updates.name = args.name;
     if (args.phone !== undefined) updates.phone = args.phone;
     if (args.notes !== undefined) updates.notes = args.notes;
-    if (args.birthday !== undefined) updates.birthday = args.birthday || undefined; // Empty string clears
+    if (args.birthday !== undefined) updates.birthday = args.birthday || undefined;
+    if (args.recommendedReturnDate !== undefined) updates.recommendedReturnDate = args.recommendedReturnDate || undefined;
     
     await ctx.db.patch(args.patientId, updates);
     
@@ -307,7 +309,8 @@ export const create = mutation({
     name: v.string(),
     phone: v.string(),
     notes: v.optional(v.string()),
-    birthday: v.optional(v.string()), // ISO date string (YYYY-MM-DD)
+    birthday: v.optional(v.string()), // MM-DD (month and day only)
+    recommendedReturnDate: v.optional(v.string()), // YYYY-MM-DD
   },
   handler: async (ctx, args) => {
     const log = createMutationLogger("patients.create", { 
@@ -345,6 +348,7 @@ export const create = mutation({
       phone: args.phone,
       notes: args.notes,
       birthday: args.birthday,
+      recommendedReturnDate: args.recommendedReturnDate,
     });
     
     log.info("Created patient", { patientId });
