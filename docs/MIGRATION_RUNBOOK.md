@@ -91,6 +91,7 @@ npx convex env set SMS_QUIET_HOURS_START "21:00"
 npx convex env set SMS_QUIET_HOURS_END "08:00"
 
 # Base URL for patient-facing links in SMS messages
+# Optional legacy fallback only (new code uses SITE_URL first)
 npx convex env set BASE_URL "https://your-production-domain.com"
 ```
 
@@ -178,6 +179,8 @@ CONVEX_DEPLOY_KEY=dev:affable-ostrich-784|YOUR_DEPLOY_KEY
 AUTH_RESEND_KEY=re_YOUR_DEV_RESEND_KEY
 SITE_URL=http://localhost:3000
 ```
+
+`SITE_URL` is the canonical variable. Convex exposes it to auth config as `CONVEX_SITE_URL`.
 
 Get a deploy key from: Dashboard → Your Deployment → Settings → Deploy Keys.
 

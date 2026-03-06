@@ -13,6 +13,7 @@ import {
 export { formatAppointmentDateTime } from '../../convex/webhook_utils';
 import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
 import { getSMSProviderForTeam, getDefaultSMSProvider } from '@/lib/sms';
+import { getCanonicalAppUrl } from '../../convex/lib/appUrl';
 
 const FALLBACK_HOSPITAL_ADDRESS =
   process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
@@ -98,7 +99,7 @@ export async function sendScheduleWebhook(
     // Get patient name - use null if not found (not "Unknown")
     const patientName = patient?.name || name || null;
     
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const baseUrl = getCanonicalAppUrl() || 'http://localhost:3000';
     
     // Format message using shared formatter
     message = formatScheduleMessage(

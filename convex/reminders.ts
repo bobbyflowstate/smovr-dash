@@ -25,15 +25,13 @@ import {
   type ReminderAttemptStatus,
 } from "./reminder_policies";
 import { createActionLogger, createMutationLogger, createQueryLogger } from "./lib/logger";
+import { getCanonicalAppUrl } from "./lib/appUrl";
 
 const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
 const DEFAULT_HOSPITAL_ADDRESS =
   process.env.HOSPITAL_ADDRESS ||
   "123 Medical Center Drive, Suite 456, San Francisco, CA 94102";
-// Use BASE_URL (not NEXT_PUBLIC_BASE_URL) since Convex doesn't have access to Next.js env vars
-// This must be set in Convex dashboard environment variables
-// Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
-const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
+const BASE_URL = getCanonicalAppUrl();
 
 export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
@@ -1623,4 +1621,3 @@ export const seedRemindersTestData = internalMutation({
     };
   },
 });
-
