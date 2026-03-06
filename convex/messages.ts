@@ -8,6 +8,14 @@ import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { createQueryLogger, createMutationLogger } from "./lib/logger";
 
+function normalizePhoneNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return digits.slice(1);
+  }
+  return digits;
+}
+
 // ============================================
 // Queries
 // ============================================
@@ -314,16 +322,31 @@ export const createInboundMessage = internalMutation({
       teamId: args.teamId,
       phone: args.phone,
     });
-    
-    // Find patient by phone number in this team
+
+    const normalizedInboundPhone = normalizePhoneNumber(args.phone);
+    const inboundWithCountryCode = normalizedInboundPhone.length === 10
+      ? `1${normalizedInboundPhone}`
+      : normalizedInboundPhone;
+
+    // Find patient by phone number in this team.
+    // We support exact/raw, normalized 10-digit, and normalized with leading country code.
     const patient = await ctx.db
       .query("patients")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
-      .filter((q) => q.eq(q.field("phone"), args.phone))
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("phone"), args.phone),
+          q.eq(q.field("phone"), normalizedInboundPhone),
+          q.eq(q.field("phone"), inboundWithCountryCode),
+        )
+      )
       .first();
     
     if (!patient) {
-      log.warn("No patient found for phone number", { phone: args.phone });
+      log.warn("No patient found for phone number", {
+        phone: args.phone,
+        normalizedInboundPhone,
+      });
       // TODO: Consider creating a new patient record or queuing for review
       return null;
     }
@@ -336,7 +359,7 @@ export const createInboundMessage = internalMutation({
       patientId: patient._id,
       direction: "inbound",
       body: args.body,
-      phone: args.phone,
+      phone: patient.phone,
       status: "received",
       createdAt: now,
       providerMessageId: args.providerMessageId,

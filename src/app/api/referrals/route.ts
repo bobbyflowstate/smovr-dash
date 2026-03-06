@@ -4,7 +4,7 @@ import { api, internal } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { getAuthenticatedUser, AuthError, safeErrorMessage } from "@/lib/api-utils";
 import { runWithContext, createRequestContext, getLogger } from "@/lib/observability";
-import { fetchAction } from "convex/nextjs";
+import { createAdminConvexClient } from "@/lib/convex-server";
 
 /**
  * GET /api/referrals?patientId=xxx — List referrals for a patient
@@ -81,11 +81,10 @@ export async function POST(request: NextRequest) {
       // If delay is 0 (immediate), send the follow-up SMS now
       if ((followUpDelay ?? 0) === 0) {
         try {
-          await fetchAction(
-            internal.proReminders.sendReferralFollowUp,
-            { referralId: result.referralId },
-            { token },
-          );
+          const convex = createAdminConvexClient();
+          await convex.action(internal.proReminders.sendReferralFollowUp, {
+            referralId: result.referralId,
+          });
           log.info("Immediate follow-up sent", { referralId: result.referralId });
         } catch (smsErr) {
           log.error("Failed to send immediate follow-up", smsErr);

@@ -4,6 +4,7 @@ import { createAdminConvexClient } from "@/lib/convex-server";
 import { runWithContext, createRequestContext, getLogger } from "@/lib/observability";
 import {
   safeErrorMessage,
+  isRateLimitError,
   getClientIp,
   applyIpRateLimit,
   isHoneypotTriggered,
@@ -123,8 +124,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, requestId: result.requestId });
     } catch (error) {
       log.error("Website entry request failed", error);
+      const message = safeErrorMessage(error, "Failed to submit request");
+      if (isRateLimitError(error)) {
+        return NextResponse.json(
+          { error: "Too many requests. Please try again later." },
+          { status: 429 },
+        );
+      }
       return NextResponse.json(
-        { error: safeErrorMessage(error, "Failed to submit request") },
+        { error: message },
         { status: 500 },
       );
     }

@@ -17,6 +17,8 @@ vi.mock("@/lib/api-utils", () => ({
     err instanceof Error && !err.message.includes("\n") && err.message.length < 200
       ? err.message
       : fallback,
+  isRateLimitError: (err: unknown) =>
+    err instanceof Error ? /too many requests/i.test(err.message) : false,
   getClientIp: () => "127.0.0.1",
   applyIpRateLimit: () => null,
   isHoneypotTriggered: () => false,
@@ -140,6 +142,30 @@ describe("Public booking/entry routes", () => {
     expect(mockConvex.mutation).not.toHaveBeenCalled();
   });
 
+  it("POST /api/book maps Convex rate-limit errors to HTTP 429", async () => {
+    mockConvex.query.mockResolvedValue({
+      _id: "team_from_slug",
+      languageMode: "en",
+      entrySlug: "clinic-a",
+    });
+    mockConvex.mutation.mockRejectedValueOnce(new Error("Too many requests. Please try again later."));
+
+    const { POST } = await import("../src/app/api/book/route");
+    const req = new NextRequest("http://localhost:3000/api/book", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamSlug: "clinic-a",
+        patientPhone: "(555) 111-2222",
+      }),
+    });
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(429);
+    expect(body.error).toContain("Too many requests");
+  });
+
   it("POST /api/entry allows legacy teamId payload when compatibility flag is on", async () => {
     process.env.ALLOW_LEGACY_PUBLIC_TEAM_ID = "true";
     mockConvex.query.mockResolvedValue({
@@ -168,6 +194,30 @@ describe("Public booking/entry routes", () => {
     expect(createPublicCall[1]).toEqual(
       expect.objectContaining({ teamId: "legacy_team", source: "website_button" }),
     );
+  });
+
+  it("POST /api/entry maps Convex rate-limit errors to HTTP 429", async () => {
+    mockConvex.query.mockResolvedValue({
+      _id: "team_from_slug",
+      languageMode: "en_es",
+      entrySlug: "clinic-b",
+    });
+    mockConvex.mutation.mockRejectedValueOnce(new Error("Too many requests. Please try again later."));
+
+    const { POST } = await import("../src/app/api/entry/route");
+    const req = new NextRequest("http://localhost:3000/api/entry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamSlug: "clinic-b",
+        patientPhone: "5553334444",
+      }),
+    });
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(429);
+    expect(body.error).toContain("Too many requests");
   });
 });
 

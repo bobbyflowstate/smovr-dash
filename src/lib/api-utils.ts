@@ -26,6 +26,21 @@ export function safeErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/** True when an error payload indicates request throttling/rate limiting. */
+export function isRateLimitError(error: unknown): boolean {
+  if (error instanceof Error && /too many requests/i.test(error.message)) {
+    return true;
+  }
+
+  try {
+    const serialized =
+      typeof error === "string" ? error : JSON.stringify(error);
+    return /too many requests/i.test(serialized);
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Phone normalization
 // ---------------------------------------------------------------------------
