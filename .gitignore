@@ -40,6 +40,7 @@ yarn-error.log*
 # local deployment/bootstrap artifacts
 .team.*
 ops/offices/*.json
+.convex-deploy-keys.json
 
 # typescript
 *.tsbuildinfo

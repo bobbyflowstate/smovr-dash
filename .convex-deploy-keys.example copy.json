@@ -1,0 +1,12 @@
+{
+  "deployments": [
+    {
+      "name": "arizona-prod",
+      "key": "prod:elated-ptarmigan-277|REPLACE_ME"
+    },
+    {
+      "name": "demov-smovr-prod",
+      "key": "prod:knowing-ibis-748|REPLACE_ME"
+    }
+  ]
+}
