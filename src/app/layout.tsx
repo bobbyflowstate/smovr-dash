@@ -7,9 +7,10 @@ import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 
 const inter = Inter({ subsets: ["latin"] });
+const OFFICE_NAME = process.env.NEXT_PUBLIC_OFFICE_NAME || "Medical Office";
 
 export const metadata: Metadata = {
-  title: "AZ Integrated Medical (Yuma)",
+  title: OFFICE_NAME,
   description: "Secure healthcare data management platform",
 };
 

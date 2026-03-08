@@ -4,6 +4,8 @@ import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from "../../convex/_generated/api";
 import { globalLogger } from "@/lib/observability";
 
+const OFFICE_NAME = process.env.NEXT_PUBLIC_OFFICE_NAME || "Medical Office";
+
 export default async function Home() {
   const isAuthenticated = await isAuthenticatedNextjs();
 
@@ -147,7 +149,7 @@ export default async function Home() {
                 </svg>
               </div>
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-                Welcome to AZ Integrated Medical (Yuma)
+                {`Welcome to ${OFFICE_NAME}`}
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
                 Secure healthcare data management platform
