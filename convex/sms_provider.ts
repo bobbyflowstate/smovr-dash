@@ -3,7 +3,7 @@
  *
  * Portable provider implementations that work in both the Convex action
  * runtime and the Next.js server. Only built-in APIs are used (fetch,
- * Buffer, URLSearchParams) — no npm SDK dependencies.
+ * URLSearchParams, btoa/Buffer fallback) — no npm SDK dependencies.
  */
 
 import { createConvexLogger } from "./lib/logger";
@@ -139,6 +139,16 @@ export class GHLProvider implements SMSProvider {
 const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01";
 const TWILIO_TIMEOUT_MS = 10_000;
 
+function toBase64(value: string): string {
+  if (typeof btoa === "function") {
+    return btoa(value);
+  }
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(value).toString("base64");
+  }
+  throw new Error("No base64 encoder available in runtime");
+}
+
 export interface TwilioConfig {
   accountSid: string;
   authToken: string;
@@ -171,9 +181,7 @@ export class TwilioProvider implements SMSProvider {
       formData.append("From", params.from || this.config.fromNumber!);
     }
 
-    const auth = Buffer.from(
-      `${this.config.accountSid}:${this.config.authToken}`
-    ).toString("base64");
+    const auth = toBase64(`${this.config.accountSid}:${this.config.authToken}`);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TWILIO_TIMEOUT_MS);
