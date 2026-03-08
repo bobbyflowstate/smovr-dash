@@ -16,6 +16,8 @@ export type ReminderAttemptReasonCode =
   | "SENT"
   | "INVALID_QUIET_HOURS"
   | "BASE_URL_NOT_CONFIGURED"
+  | "TEAM_SETTINGS_NOT_CONFIGURED"
+  | "TEAM_SMS_CONFIG_NOT_CONFIGURED"
   | "PATIENT_NOT_FOUND"
   | "WEBHOOK_URL_NOT_CONFIGURED"
   | "WEBHOOK_HTTP_NON_RETRYABLE"
@@ -60,6 +62,10 @@ export function mapWebhookFailureToReason(result: SMSWebhookResult): ReminderAtt
   switch (result.failureReason) {
     case "WEBHOOK_URL_NOT_CONFIGURED":
       return "WEBHOOK_URL_NOT_CONFIGURED";
+    case "TEAM_SETTINGS_NOT_CONFIGURED":
+      return "TEAM_SETTINGS_NOT_CONFIGURED";
+    case "TEAM_SMS_CONFIG_NOT_CONFIGURED":
+      return "TEAM_SMS_CONFIG_NOT_CONFIGURED";
     case "HTTP_NON_RETRYABLE":
       return "WEBHOOK_HTTP_NON_RETRYABLE";
     case "HTTP_RETRY_EXHAUSTED":
@@ -91,6 +97,10 @@ export function noteForAttempt(status: ReminderAttemptStatus, reason: ReminderAt
         return `Reminder not sent because BASE_URL is not configured for Convex.${itNote}`;
       case "PATIENT_NOT_FOUND":
         return `Reminder not sent because patient record was not found.${itNote}`;
+      case "TEAM_SETTINGS_NOT_CONFIGURED":
+        return `Reminder not sent because required team settings (timezone/address) are not configured.${itNote}`;
+      case "TEAM_SMS_CONFIG_NOT_CONFIGURED":
+        return `Reminder not sent because team SMS provider configuration is missing or disabled.${itNote}`;
       default:
         return `Reminder not sent due to a configuration/precondition failure.${itNote}`;
     }
@@ -115,4 +125,3 @@ export function noteForAttempt(status: ReminderAttemptStatus, reason: ReminderAt
 
   return "Reminder not sent due to an unexpected processing error.";
 }
-

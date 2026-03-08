@@ -80,8 +80,20 @@ export async function POST(request: NextRequest) {
     const team = userInfo?.teamId
       ? await fetchQuery(api.teams.getById, { teamId: userInfo.teamId as Id<"teams"> }, { token })
       : null;
-    const teamTimezone =
-      team?.timezone || process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
+    const teamTimezone = team?.timezone;
+    const teamHospitalAddress = team?.hospitalAddress;
+    if (!teamTimezone) {
+      return NextResponse.json(
+        { error: "Team timezone is not configured. Please update team settings in Convex." },
+        { status: 500 }
+      );
+    }
+    if (!teamHospitalAddress) {
+      return NextResponse.json(
+        { error: "Team hospital address is not configured. Please update team settings in Convex." },
+        { status: 500 }
+      );
+    }
 
     // Convert appointment time to configured timezone
     // User submits local time components, which we reinterpret as being in the configured timezone

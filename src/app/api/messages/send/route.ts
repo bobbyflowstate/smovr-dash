@@ -13,7 +13,7 @@ import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from '../../../../../convex/_generated/api';
 import { internal } from '../../../../../convex/_generated/api';
 import { Id } from '../../../../../convex/_generated/dataModel';
-import { getSMSProviderForTeam, getDefaultSMSProvider, resolveTemplatePlaceholders, type MessageContext } from '@/lib/sms';
+import { getSMSProviderForTeam, resolveTemplatePlaceholders, type MessageContext } from '@/lib/sms';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { formatAppointmentDateTime } from '@/lib/webhook-utils';
 import { createAdminConvexClient } from '@/lib/convex-server';
@@ -90,14 +90,21 @@ export async function POST(request: NextRequest) {
           const team = await fetchQuery(api.teams.getById, {
             teamId: appointment.teamId,
           }, { token });
-          
-          const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
+
+          if (!team?.timezone || !team?.hospitalAddress) {
+            return NextResponse.json(
+              { error: "Team timezone/hospital address is not configured. Please update team settings in Convex." },
+              { status: 500 }
+            );
+          }
+
+          const timezone = team.timezone;
           const appointmentDate = new Date(appointment.dateTime);
           const { appointmentDateStr, appointmentTimeStr } = formatAppointmentDateTime(appointmentDate, timezone);
           
           messageContext.appointmentDate = appointmentDateStr;
           messageContext.appointmentTime = appointmentTimeStr;
-          messageContext.hospitalAddress = team?.hospitalAddress || undefined;
+          messageContext.hospitalAddress = team.hospitalAddress;
         }
       }
       
@@ -117,12 +124,18 @@ export async function POST(request: NextRequest) {
       createdMessageId = messageId as Id<'messages'>;
       
       // Get SMS provider for team
-      let provider = await getSMSProviderForTeam(convex, teamId as Id<'teams'>);
-      
-      // Fall back to default provider if team has no config
+      const provider = await getSMSProviderForTeam(convex, teamId as Id<'teams'>);
       if (!provider) {
-        log.info('Using default SMS provider');
-        provider = getDefaultSMSProvider();
+        await convex.mutation(internal.messages.updateMessageStatus, {
+          messageId: messageId as Id<'messages'>,
+          status: 'failed',
+          errorMessage: 'TEAM_SMS_CONFIG_NOT_CONFIGURED',
+        });
+        return NextResponse.json({
+          ok: false,
+          messageId,
+          error: 'Team SMS config is missing or disabled',
+        }, { status: 500 });
       }
       
       // Send the message

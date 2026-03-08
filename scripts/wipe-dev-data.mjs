@@ -22,6 +22,26 @@ const TABLES = [
   "users",
   "teams",
 ];
+const DEV_CONFIRM_TOKEN = "WIPE_DEV_DATA";
+const PROD_CONFIRM_TOKEN = "WIPE_PROD_DATA";
+
+function parseArgs(argv) {
+  let allowProd = false;
+  let confirmProd = "";
+
+  for (const arg of argv) {
+    if (arg === "--allow-prod") {
+      allowProd = true;
+      continue;
+    }
+    if (arg.startsWith("--confirm-prod=")) {
+      confirmProd = arg.slice("--confirm-prod=".length);
+      continue;
+    }
+  }
+
+  return { allowProd, confirmProd };
+}
 
 function loadDotEnvLocal() {
   const envPath = resolve(process.cwd(), ".env.local");
@@ -59,12 +79,21 @@ function loadDotEnvLocal() {
 }
 
 loadDotEnvLocal();
+const { allowProd, confirmProd } = parseArgs(process.argv.slice(2));
 
 const deployment = process.env.CONVEX_DEPLOYMENT || "";
+const isProdDeployment = deployment.startsWith("prod:");
 
-if (!deployment.startsWith("dev:")) {
+if (!deployment.startsWith("dev:") && !isProdDeployment) {
   console.error(
-    `Refusing to wipe because CONVEX_DEPLOYMENT is not a dev deployment: "${deployment}".`
+    `Refusing to wipe because CONVEX_DEPLOYMENT is neither dev:* nor prod:*: "${deployment}".`
+  );
+  process.exit(1);
+}
+
+if (isProdDeployment && (!allowProd || confirmProd !== PROD_CONFIRM_TOKEN)) {
+  console.error(
+    `Refusing to wipe production deployment "${deployment}". Re-run with --allow-prod --confirm-prod=${PROD_CONFIRM_TOKEN}`
   );
   process.exit(1);
 }
@@ -76,10 +105,11 @@ for (const table of TABLES) {
     const payload = JSON.stringify({
       table,
       batchSize: 500,
-      confirm: "WIPE_DEV_DATA",
+      confirm: isProdDeployment ? PROD_CONFIRM_TOKEN : DEV_CONFIRM_TOKEN,
+      ...(isProdDeployment ? { allowProd: true } : null),
     });
     const output = execSync(
-      `npx convex run internal.devAdmin.clearTable '${payload}'`,
+      `npx convex run --deployment-name ${deployment} internal.devAdmin.clearTable '${payload}'`,
       { encoding: "utf8" }
     ).trim();
 
@@ -94,4 +124,8 @@ for (const table of TABLES) {
   console.log(`${table}: deleted ${totalDeleted}`);
 }
 
-console.log("Done: cleared all configured dev tables.");
+if (isProdDeployment) {
+  console.log("Done: cleared all configured production tables.");
+} else {
+  console.log("Done: cleared all configured dev tables.");
+}

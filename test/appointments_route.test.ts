@@ -154,7 +154,7 @@ describe("POST /api/appointments", () => {
       }
       // getById for team
       if ("teamId" in args) {
-        return { timezone: "America/Phoenix" };
+        return { timezone: "America/Phoenix", hospitalAddress: "123 Main St" };
       }
       // getExistingForPatient
       if ("phone" in args) {
@@ -226,7 +226,7 @@ describe("POST /api/appointments", () => {
         return { userId: "u1", userEmail: "doc@clinic.com", teamId: "t1", teamName: "Clinic A" };
       }
       if ("teamId" in args) {
-        return { timezone: "America/Phoenix" };
+        return { timezone: "America/Phoenix", hospitalAddress: "123 Main St" };
       }
       // getExistingForPatient: return an existing appointment
       if ("phone" in args && "userEmail" in args) {
@@ -255,5 +255,37 @@ describe("POST /api/appointments", () => {
     const body = await res.json();
     expect(body.requiresConfirmation).toBe(true);
     expect(body.existingAppointment.id).toBe("appt_existing");
+  });
+
+  it("returns 500 when team hospital address is not configured", async () => {
+    mockFetchQuery.mockImplementation(async (_fn: unknown, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        return { userId: "u1", userEmail: "doc@clinic.com", teamId: "t1", teamName: "Clinic A" };
+      }
+      if ("teamId" in args) {
+        return { timezone: "America/Phoenix", hospitalAddress: null };
+      }
+      if ("phone" in args && "userEmail" in args) {
+        return null;
+      }
+      return null;
+    });
+
+    const { POST } = await import("../src/app/api/appointments/route");
+    const req = new NextRequest("http://localhost:3000/api/appointments", {
+      method: "POST",
+      body: JSON.stringify({
+        phone: "+1111",
+        name: "Alice",
+        appointmentDateTime: "2026-03-15T10:00:00Z",
+        skipExistingCheck: true,
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toMatch(/hospital address is not configured/i);
   });
 });

@@ -8,6 +8,13 @@ import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { createQueryLogger, createMutationLogger } from "./lib/logger";
 
+async function getTeamConfigs(ctx: any, teamId: any) {
+  return await ctx.db
+    .query("teamSmsConfig")
+    .withIndex("by_team", (q: any) => q.eq("teamId", teamId))
+    .collect();
+}
+
 /**
  * Get SMS configuration for a team.
  * Internal-only: called from server-side code (webhook handler, provider factory).
@@ -18,11 +25,12 @@ export const getByTeamId = internalQuery({
   },
   handler: async (ctx, args) => {
     const log = createQueryLogger("smsConfig.getByTeamId", { teamId: args.teamId });
-    
-    const config = await ctx.db
-      .query("teamSmsConfig")
-      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
-      .first();
+    const configs = await getTeamConfigs(ctx, args.teamId);
+    if (configs.length > 1) {
+      log.error("Duplicate SMS configs for team", { count: configs.length });
+      throw new Error("Duplicate SMS configuration rows found for team.");
+    }
+    const config = configs[0] ?? null;
     
     log.debug("Fetched SMS config", { found: !!config });
     return config;
@@ -52,10 +60,12 @@ export const getForCurrentUser = query({
     }
     const teamId = user.teamId;
     
-    const config = await ctx.db
-      .query("teamSmsConfig")
-      .withIndex("by_team", (q) => q.eq("teamId", teamId))
-      .first();
+    const configs = await getTeamConfigs(ctx, teamId);
+    if (configs.length > 1) {
+      log.error("Duplicate SMS configs for team", { teamId, count: configs.length });
+      throw new Error("Duplicate SMS configuration rows found for team.");
+    }
+    const config = configs[0] ?? null;
     
     if (!config) {
       log.debug("No SMS config for user", { teamId });
@@ -107,10 +117,12 @@ export const upsert = mutation({
     const teamId = user.teamId;
     
     // Check for existing config
-    const existing = await ctx.db
-      .query("teamSmsConfig")
-      .withIndex("by_team", (q) => q.eq("teamId", teamId))
-      .first();
+    const configs = await getTeamConfigs(ctx, teamId);
+    if (configs.length > 1) {
+      log.error("Duplicate SMS configs for team", { teamId, count: configs.length });
+      throw new Error("Duplicate SMS configuration rows found for team.");
+    }
+    const existing = configs[0] ?? null;
     
     const configData = {
       teamId,
@@ -160,10 +172,12 @@ export const setEnabled = mutation({
     }
     const teamId = user.teamId;
     
-    const config = await ctx.db
-      .query("teamSmsConfig")
-      .withIndex("by_team", (q) => q.eq("teamId", teamId))
-      .first();
+    const configs = await getTeamConfigs(ctx, teamId);
+    if (configs.length > 1) {
+      log.error("Duplicate SMS configs for team", { teamId, count: configs.length });
+      throw new Error("Duplicate SMS configuration rows found for team.");
+    }
+    const config = configs[0] ?? null;
     
     if (!config) {
       log.error("SMS config not found for team");
@@ -174,4 +188,3 @@ export const setEnabled = mutation({
     log.info("Updated SMS enabled status");
   },
 });
-

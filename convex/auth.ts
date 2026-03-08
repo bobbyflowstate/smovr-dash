@@ -3,12 +3,18 @@ import { convexAuth } from "@convex-dev/auth/server";
 import type { Id } from "./_generated/dataModel";
 import { normalizeEmail, pickCanonicalUserId } from "./lib/emailIdentity";
 
+const DEFAULT_AUTH_EMAIL_FROM = "My App <onboarding@resend.dev>";
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [Resend],
+  providers: [
+    Resend({
+      from: process.env.AUTH_EMAIL_FROM || DEFAULT_AUTH_EMAIL_FROM,
+    }),
+  ],
   callbacks: {
     createOrUpdateUser: async (ctx, args) => {
       const normalizedEmail = normalizeEmail(asString(args.profile.email));

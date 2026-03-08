@@ -22,8 +22,6 @@ async function getOrCreatePrimaryTeamId(
   return await ctx.db.insert("teams", {
     name: process.env.DEFAULT_TEAM_NAME || fallbackName,
     contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
-    timezone: process.env.APPOINTMENT_TIMEZONE,
-    hospitalAddress: process.env.HOSPITAL_ADDRESS,
   });
 }
 

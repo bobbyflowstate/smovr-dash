@@ -4,15 +4,25 @@ import { internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
+process.env.SITE_URL = process.env.SITE_URL || "http://localhost:3000";
+
 /** Create a date that is `hoursFromNow` hours after `now`. */
 function hoursLater(now: Date, hours: number): Date {
   return new Date(now.getTime() + hours * 60 * 60 * 1000);
 }
 
 /** Seed a team + patient + appointment at the given dateTime. */
-async function seed(t: ReturnType<typeof convexTest>, appointmentDateTime: string) {
+async function seed(
+  t: ReturnType<typeof convexTest>,
+  appointmentDateTime: string,
+  teamOverrides?: { timezone?: string; hospitalAddress?: string },
+) {
   return t.run(async (ctx) => {
-    const teamId = await ctx.db.insert("teams", { name: "Acme Dental" });
+    const teamId = await ctx.db.insert("teams", {
+      name: "Acme Dental",
+      timezone: teamOverrides?.timezone,
+      hospitalAddress: teamOverrides?.hospitalAddress,
+    });
     const patientId = await ctx.db.insert("patients", {
       phone: "+15551234567",
       name: "Alice Jones",
@@ -138,5 +148,80 @@ describe("reminders.markReminderSentIfInWindow", () => {
         .collect(),
     );
     expect(reminders).toHaveLength(0);
+  });
+});
+
+describe("reminders.checkAndSendReminders timezone behavior", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("formats reminder message using the team's timezone", async () => {
+    const now = new Date("2026-03-10T20:00:00Z"); // 1:00 PM in America/Phoenix
+    vi.setSystemTime(now);
+
+    const apptTime = hoursLater(now, 24); // should trigger 24h reminder window
+    const t = convexTest(schema, modules);
+    const { patientId, appointmentId } = await seed(t, apptTime.toISOString(), {
+      timezone: "America/Phoenix",
+      hospitalAddress: "123 Main St",
+    });
+    await t.run(async (ctx) => {
+      const appointment = await ctx.db.get(appointmentId);
+      await ctx.db.insert("teamSmsConfig", {
+        teamId: appointment!.teamId,
+        provider: "mock",
+        isEnabled: true,
+      });
+    });
+
+    await t.action(internal.reminders.checkAndSendReminders, {});
+
+    const attempt = await t.run(async (ctx) =>
+      ctx.db
+        .query("reminderAttempts")
+        .withIndex("by_appointment_type", (q: any) =>
+          q.eq("appointmentId", appointmentId).eq("reminderType", "24h"),
+        )
+        .filter((q: any) => q.eq(q.field("status"), "succeeded"))
+        .first(),
+    );
+
+    expect(attempt).not.toBeNull();
+    const details = JSON.parse(attempt!.detailsJson || "{}");
+    const messageBody = details?.webhook?.messageBody as string;
+    expect(typeof messageBody).toBe("string");
+    expect(messageBody).toContain("1:00 PM");
+    expect(messageBody).not.toContain("8:00 PM");
+  });
+
+  it("records failed_precondition when team SMS config is missing", async () => {
+    const now = new Date("2026-03-10T20:00:00Z");
+    vi.setSystemTime(now);
+
+    const apptTime = hoursLater(now, 24);
+    const t = convexTest(schema, modules);
+    const { appointmentId } = await seed(t, apptTime.toISOString(), {
+      timezone: "America/Phoenix",
+      hospitalAddress: "123 Main St",
+    });
+
+    await t.action(internal.reminders.checkAndSendReminders, {});
+
+    const attempt = await t.run(async (ctx) =>
+      ctx.db
+        .query("reminderAttempts")
+        .withIndex("by_appointment_type", (q: any) =>
+          q.eq("appointmentId", appointmentId).eq("reminderType", "24h"),
+        )
+        .first(),
+    );
+
+    expect(attempt).not.toBeNull();
+    expect(attempt!.status).toBe("failed_precondition");
+    expect(attempt!.reasonCode).toBe("TEAM_SMS_CONFIG_NOT_CONFIGURED");
   });
 });

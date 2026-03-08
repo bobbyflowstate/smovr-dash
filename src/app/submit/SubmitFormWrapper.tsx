@@ -39,11 +39,29 @@ export default async function SubmitFormWrapper() {
   const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
   const userName = userInfo?.userName || "User";
   const teamName = userInfo?.teamName || "Unknown Team";
+  const team = userInfo?.teamId
+    ? await fetchQuery(api.teams.getById, { teamId: userInfo.teamId }, { token })
+    : null;
+  const teamTimezone = team?.timezone || null;
+
+  if (!teamTimezone) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 transition-colors">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Team setup required</h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Team timezone is not configured. Set `teams.timezone` in Convex before scheduling appointments.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <SubmitForm 
       userName={userName}
       teamName={teamName}
+      teamTimezone={teamTimezone}
     />
   );
 }

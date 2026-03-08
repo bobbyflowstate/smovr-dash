@@ -9,7 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "wipe:dev:data": "node scripts/wipe-dev-data.mjs"
+    "wipe:data": "node scripts/wipe-dev-data.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.37.0",

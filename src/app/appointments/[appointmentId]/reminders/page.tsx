@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { APPOINTMENT_TIMEZONE, getTimezoneDisplayName } from "@/lib/timezone-utils";
+import { getTimezoneDisplayName } from "@/lib/timezone-utils";
 import { REMINDER_WINDOWS_HOURS } from "../../../../../convex/reminder_logic";
 import {
   DEFAULT_QUIET_HOURS_END,
@@ -26,6 +26,7 @@ type AppointmentInfo = {
   notes: string | null;
   patientId: string;
   teamId: string;
+  teamTimezone?: string | null;
 };
 
 type PatientInfo = {
@@ -125,6 +126,7 @@ export default function ReminderAttemptsPage() {
   const [appointment, setAppointment] = useState<AppointmentInfo | null>(null);
   const [patient, setPatient] = useState<PatientInfo>(null);
   const [expectedRows, setExpectedRows] = useState<ExpectedReminderRow[]>([]);
+  const [teamTimezone, setTeamTimezone] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -148,8 +150,13 @@ export default function ReminderAttemptsPage() {
           throw new Error(apptData?.error || `Failed to load appointment (${apptRes.status})`);
         }
 
+        if (!apptData?.teamTimezone) {
+          throw new Error("Team timezone is not configured for this appointment.");
+        }
+
         setAttempts(attemptsData?.attempts || []);
         setAppointment(apptData?.appointment || null);
+        setTeamTimezone(apptData.teamTimezone);
         setPatient(apptData?.patient || null);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load reminder attempts");
@@ -175,8 +182,9 @@ export default function ReminderAttemptsPage() {
 
   const formatInClinicTimezone = (date: Date) => {
     if (isNaN(date.getTime())) return "Invalid date";
+    if (!teamTimezone) return "Timezone not configured";
     return new Intl.DateTimeFormat("en-US", {
-      timeZone: APPOINTMENT_TIMEZONE,
+      timeZone: teamTimezone,
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -187,7 +195,7 @@ export default function ReminderAttemptsPage() {
   };
 
   useEffect(() => {
-    if (!appointment?.dateTime) {
+    if (!appointment?.dateTime || !teamTimezone) {
       setExpectedRows([]);
       return;
     }
@@ -222,7 +230,7 @@ export default function ReminderAttemptsPage() {
       const anyNonQuiet = intervalHasNonQuietTime({
         start: windowStart,
         end: windowEnd,
-        timezone: APPOINTMENT_TIMEZONE,
+        timezone: teamTimezone,
         quietStart: DEFAULT_QUIET_HOURS_START,
         quietEnd: DEFAULT_QUIET_HOURS_END,
       });
@@ -255,7 +263,7 @@ export default function ReminderAttemptsPage() {
     };
 
     setExpectedRows([buildRow("24h"), buildRow("1h")]);
-  }, [appointment?.dateTime, attempts]);
+  }, [appointment?.dateTime, attempts, teamTimezone]);
 
   return (
     <div className="space-y-6">
@@ -273,7 +281,7 @@ export default function ReminderAttemptsPage() {
               <span className="font-semibold">
                 10pm–5am
               </span>{" "}
-              ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})
+              ({teamTimezone ? getTimezoneDisplayName(teamTimezone) : "Not configured"})
             </p>
           </div>
           <Link
@@ -306,7 +314,7 @@ export default function ReminderAttemptsPage() {
                 Expected reminders
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Times shown in {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}. The system checks about every minute.
+                Times shown in {teamTimezone ? getTimezoneDisplayName(teamTimezone) : "Not configured"}. The system checks about every minute.
               </p>
               {appointment?.dateTime && (
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -457,4 +465,3 @@ export default function ReminderAttemptsPage() {
     </div>
   );
 }
-

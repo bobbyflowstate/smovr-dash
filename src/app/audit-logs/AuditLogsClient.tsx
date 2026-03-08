@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  APPOINTMENT_TIMEZONE,
   formatDateTimeInAppointmentTimezone,
   getTimezoneDisplayName,
 } from '@/lib/timezone-utils';
@@ -19,6 +18,7 @@ interface AuditLog {
 
 export default function AuditLogsClient() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [teamTimezone, setTeamTimezone] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
@@ -39,7 +39,8 @@ export default function AuditLogsClient() {
       }
 
       const data = await response.json();
-      setAuditLogs(data);
+      setAuditLogs(data.auditLogs || []);
+      setTeamTimezone(data.teamTimezone || null);
     } catch (err) {
       console.error("Error fetching audit logs:", err);
       setError(err instanceof Error ? err.message : "Failed to load audit logs");
@@ -202,7 +203,7 @@ export default function AuditLogsClient() {
                     Patient Phone
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Appointment ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})
+                    Appointment ({teamTimezone ? getTimezoneDisplayName(teamTimezone) : "Not configured"})
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Action
@@ -229,7 +230,9 @@ export default function AuditLogsClient() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                       {isValidDate(auditLog.appointmentDateTime) 
-                        ? formatDateTimeInAppointmentTimezone(new Date(auditLog.appointmentDateTime))
+                        ? (teamTimezone
+                            ? formatDateTimeInAppointmentTimezone(new Date(auditLog.appointmentDateTime), teamTimezone)
+                            : "Not configured")
                         : auditLog.appointmentDateTime || "Unknown"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -278,4 +281,3 @@ export default function AuditLogsClient() {
     </div>
   );
 }
-

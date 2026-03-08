@@ -35,6 +35,11 @@ yarn-error.log*
 
 # vercel
 .vercel
+.vercel-links/
+
+# local deployment/bootstrap artifacts
+.team.*
+ops/offices/*.json
 
 # typescript
 *.tsbuildinfo

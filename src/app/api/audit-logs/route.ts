@@ -14,7 +14,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
 import { isValidAuditAction, AUDIT_LOG_MESSAGES, type AuditLogAction } from '@/lib/audit-log-actions';
-import { APPOINTMENT_TIMEZONE, extractComponentsInTimezone } from '@/lib/timezone-utils';
+import { extractComponentsInTimezone } from '@/lib/timezone-utils';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
 import { getAuthenticatedUser, AuthError } from '@/lib/api-utils';
 
@@ -46,12 +46,26 @@ export async function GET(request: NextRequest) {
 
       extendContext({ userEmail: user.userEmail });
 
-      const auditLogs = await fetchQuery(api.audit_logs.getAuditLogsByTeam, { 
+      const auditLogs = await fetchQuery(api.audit_logs.getAuditLogsByTeam, {
         teamId: user.teamId as Id<"teams">
       }, { token });
+      const team = await fetchQuery(
+        api.teams.getById,
+        { teamId: user.teamId as Id<"teams"> },
+        { token }
+      );
+      if (!team?.timezone) {
+        return NextResponse.json(
+          { error: 'Team timezone is not configured' },
+          { status: 500 }
+        );
+      }
 
       log.info('Audit logs fetched', { count: auditLogs.length });
-      return NextResponse.json(auditLogs);
+      return NextResponse.json({
+        auditLogs,
+        teamTimezone: team.timezone,
+      });
     } catch (error) {
       if (error instanceof AuthError) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -120,6 +134,12 @@ export async function POST(request: NextRequest) {
       const team = await convex.query(api.teams.getById, {
         teamId: appointment.teamId,
       });
+      if (!team?.timezone) {
+        return NextResponse.json(
+          { error: 'Team timezone is not configured' },
+          { status: 500 }
+        );
+      }
       const contactPhone = team?.contactPhone || DEFAULT_TEAM_CONTACT_PHONE || null;
 
       // Check if appointment date has passed (next day or later)
@@ -129,8 +149,8 @@ export async function POST(request: NextRequest) {
       const now = new Date(); // Current UTC time
       
       // Extract date components in the clinic's timezone for both dates
-      const appointmentComponents = extractComponentsInTimezone(appointmentDate, APPOINTMENT_TIMEZONE);
-      const todayComponents = extractComponentsInTimezone(now, APPOINTMENT_TIMEZONE);
+      const appointmentComponents = extractComponentsInTimezone(appointmentDate, team.timezone);
+      const todayComponents = extractComponentsInTimezone(now, team.timezone);
       
       // Compare dates only (ignore time) - if appointment date is before today in clinic timezone, it's passed
       const appointmentDateOnly = new Date(
@@ -174,4 +194,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

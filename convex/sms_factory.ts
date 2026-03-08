@@ -53,9 +53,7 @@ export function createProviderFromConfig(config: TeamSmsConfig): SMSProvider | n
       const authToken = prefix
         ? process.env[`${prefix}_TWILIO_AUTH_TOKEN`] || process.env.TWILIO_AUTH_TOKEN
         : process.env.TWILIO_AUTH_TOKEN;
-      const fromNumber = prefix
-        ? process.env[`${prefix}_TWILIO_FROM_NUMBER`] || process.env.TWILIO_FROM_NUMBER
-        : process.env.TWILIO_FROM_NUMBER;
+      const fromNumber = config.fromNumber;
       const messagingServiceSid = prefix
         ? process.env[`${prefix}_TWILIO_MESSAGING_SERVICE_SID`] || process.env.TWILIO_MESSAGING_SERVICE_SID
         : process.env.TWILIO_MESSAGING_SERVICE_SID;
@@ -88,15 +86,13 @@ export function getDefaultProvider(): SMSProvider {
   const twilioSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioToken = process.env.TWILIO_AUTH_TOKEN;
   const twilioMsgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
-  const twilioFrom = process.env.TWILIO_FROM_NUMBER;
 
-  if (twilioSid && twilioToken && (twilioMsgSvc || twilioFrom)) {
+  if (twilioSid && twilioToken && twilioMsgSvc) {
     log.info("Using Twilio provider");
     return new TwilioProvider({
       accountSid: twilioSid,
       authToken: twilioToken,
       messagingServiceSid: twilioMsgSvc,
-      fromNumber: twilioFrom,
     });
   }
 

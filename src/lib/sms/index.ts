@@ -15,7 +15,7 @@ const log = globalLogger.child({ component: 'sms.factory' });
 import type { SMSProvider, SMSProviderConfig, SendResult, InboundMessage } from './types';
 import { MockSMSProvider } from './providers/mock';
 import { GHLProvider } from './providers/ghl';
-import { createTwilioFromEnv, createTwilioFromGlobalEnv, TwilioProvider } from './providers/twilio';
+import { TwilioProvider } from './providers/twilio';
 
 // Re-export types
 export * from './types';
@@ -72,12 +72,30 @@ export function createProviderFromConfig(config: SMSProviderConfig): SMSProvider
     }
       
     case 'twilio': {
-      // Try prefixed env vars first, then global
-      if (config.credentialsEnvPrefix) {
-        return createTwilioFromEnv(config.credentialsEnvPrefix);
+      const prefix = config.credentialsEnvPrefix;
+      const accountSid = prefix
+        ? process.env[`${prefix}_TWILIO_ACCOUNT_SID`] || process.env.TWILIO_ACCOUNT_SID
+        : process.env.TWILIO_ACCOUNT_SID;
+      const authToken = prefix
+        ? process.env[`${prefix}_TWILIO_AUTH_TOKEN`] || process.env.TWILIO_AUTH_TOKEN
+        : process.env.TWILIO_AUTH_TOKEN;
+      const messagingServiceSid = prefix
+        ? process.env[`${prefix}_TWILIO_MESSAGING_SERVICE_SID`] || process.env.TWILIO_MESSAGING_SERVICE_SID
+        : process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+      if (!accountSid || !authToken) {
+        throw new Error('Missing Twilio credentials for team config');
       }
-      // Fall back to global Twilio env vars
-      return createTwilioFromGlobalEnv();
+      if (!config.fromNumber && !messagingServiceSid) {
+        throw new Error('Twilio provider requires team fromNumber or TWILIO_MESSAGING_SERVICE_SID');
+      }
+
+      return new TwilioProvider({
+        accountSid,
+        authToken,
+        fromNumber: config.fromNumber,
+        messagingServiceSid,
+      });
     }
       
     default:
@@ -100,15 +118,13 @@ export function getDefaultSMSProvider(): SMSProvider {
   const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
   const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
-  const twilioFromNumber = process.env.TWILIO_FROM_NUMBER;
   
-  if (twilioAccountSid && twilioAuthToken && (twilioMessagingServiceSid || twilioFromNumber)) {
+  if (twilioAccountSid && twilioAuthToken && twilioMessagingServiceSid) {
     log.info('Using Twilio provider');
     return new TwilioProvider({
       accountSid: twilioAccountSid,
       authToken: twilioAuthToken,
       messagingServiceSid: twilioMessagingServiceSid,
-      fromNumber: twilioFromNumber,
     });
   }
   
@@ -210,4 +226,3 @@ export async function parseInboundWebhook(
   
   return provider.parseInboundWebhook(request);
 }
-

@@ -1,7 +1,3 @@
-// Get timezone from environment variable (must match backend)
-// Use NEXT_PUBLIC_APPOINTMENT_TIMEZONE to match frontend, with fallback for backward compatibility
-export const APPOINTMENT_TIMEZONE = process.env.NEXT_PUBLIC_APPOINTMENT_TIMEZONE || process.env.APPOINTMENT_TIMEZONE || 'America/Los_Angeles';
-
 /**
  * Extract date/time components from a Date object as they appear in a specific timezone.
  * This ensures the frontend sends time components that match what the backend expects.
@@ -152,8 +148,8 @@ export function formatInTimezone(date: Date, timezone: string, options: Intl.Dat
 /**
  * Format time only in appointment timezone (e.g., "2:00 PM")
  */
-export function formatTimeInAppointmentTimezone(date: Date): string {
-  return formatInTimezone(date, APPOINTMENT_TIMEZONE, {
+export function formatTimeInAppointmentTimezone(date: Date, timezone: string): string {
+  return formatInTimezone(date, timezone, {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
@@ -163,8 +159,8 @@ export function formatTimeInAppointmentTimezone(date: Date): string {
 /**
  * Format full date in appointment timezone (e.g., "Monday, January 15, 2024")
  */
-export function formatFullDateInAppointmentTimezone(date: Date): string {
-  return formatInTimezone(date, APPOINTMENT_TIMEZONE, {
+export function formatFullDateInAppointmentTimezone(date: Date, timezone: string): string {
+  return formatInTimezone(date, timezone, {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -175,12 +171,12 @@ export function formatFullDateInAppointmentTimezone(date: Date): string {
 /**
  * Format date/time in appointment timezone (e.g., "Jan 15, 2024, 2:00 PM")
  */
-export function formatDateTimeInAppointmentTimezone(date: Date): string {
+export function formatDateTimeInAppointmentTimezone(date: Date, timezone: string): string {
   // Check if date is valid
   if (isNaN(date.getTime())) {
     return 'Invalid date';
   }
-  return formatInTimezone(date, APPOINTMENT_TIMEZONE, {
+  return formatInTimezone(date, timezone, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -194,8 +190,8 @@ export function formatDateTimeInAppointmentTimezone(date: Date): string {
  * Format full date/time in appointment timezone (e.g., "January 15, 2024, 2:00 PM")
  * Used for displaying selected appointment time in submit form
  */
-export function formatFullDateTimeInAppointmentTimezone(date: Date): string {
-  return formatInTimezone(date, APPOINTMENT_TIMEZONE, {
+export function formatFullDateTimeInAppointmentTimezone(date: Date, timezone: string): string {
+  return formatInTimezone(date, timezone, {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -273,4 +269,3 @@ export function convertComponentsToTimezoneUTC(
   // Return the best candidate we found
   return new Date(candidateUTC).toISOString();
 }
-

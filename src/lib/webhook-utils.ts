@@ -11,12 +11,8 @@ import {
 
 // Re-export for use in other parts of the app
 export { formatAppointmentDateTime } from '../../convex/webhook_utils';
-import { APPOINTMENT_TIMEZONE as FALLBACK_TIMEZONE } from '@/lib/timezone-utils';
-import { getSMSProviderForTeam, getDefaultSMSProvider } from '@/lib/sms';
+import { getSMSProviderForTeam } from '@/lib/sms';
 import { getCanonicalAppUrl } from '../../convex/lib/appUrl';
-
-const FALLBACK_HOSPITAL_ADDRESS =
-  process.env.HOSPITAL_ADDRESS || '123 Medical Center Drive, Suite 456, San Francisco, CA 94102';
 
 /**
  * Send SMS using the team-based provider abstraction, falling back to the
@@ -29,12 +25,18 @@ async function sendSMSWithProvider(
   phone: string,
   message: string,
 ): Promise<SMSWebhookResult> {
-  let provider = teamId
+  const provider = teamId
     ? await getSMSProviderForTeam(convex, teamId)
     : null;
 
   if (!provider) {
-    provider = getDefaultSMSProvider();
+    return {
+      ok: false,
+      attemptCount: 0,
+      httpStatus: null,
+      failureReason: "TEAM_SMS_CONFIG_NOT_CONFIGURED",
+      errorMessage: "TEAM_SMS_CONFIG_NOT_CONFIGURED",
+    };
   }
 
   const result = await provider.sendMessage({ to: phone, body: message });
@@ -90,8 +92,17 @@ export async function sendScheduleWebhook(
       teamId: appointment.teamId,
     });
 
-    const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || FALLBACK_TIMEZONE;
-    const hospitalAddress = team?.hospitalAddress || FALLBACK_HOSPITAL_ADDRESS;
+    if (!team?.timezone || !team?.hospitalAddress) {
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "TEAM_SETTINGS_NOT_CONFIGURED",
+        errorMessage: "TEAM_SETTINGS_NOT_CONFIGURED",
+      };
+    }
+    const timezone = team.timezone;
+    const hospitalAddress = team.hospitalAddress;
 
     // Parse appointment date/time
     const appointmentDate = new Date(appointment.dateTime);
@@ -165,8 +176,17 @@ export async function sendCancelWebhook(
     const team = appointment
       ? await convex.query(api.teams.getById, { teamId: appointment.teamId })
       : null;
-    const timezone = team?.timezone || process.env.APPOINTMENT_TIMEZONE || FALLBACK_TIMEZONE;
-    const hospitalAddress = team?.hospitalAddress || FALLBACK_HOSPITAL_ADDRESS;
+    if (!team?.timezone || !team?.hospitalAddress) {
+      return {
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "TEAM_SETTINGS_NOT_CONFIGURED",
+        errorMessage: "TEAM_SETTINGS_NOT_CONFIGURED",
+      };
+    }
+    const timezone = team.timezone;
+    const hospitalAddress = team.hospitalAddress;
 
     // Parse appointment date/time
     const appointmentDate = new Date(appointmentDateTime);

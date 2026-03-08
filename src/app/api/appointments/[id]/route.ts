@@ -50,6 +50,9 @@ export async function GET(
       const patient = await fetchQuery(api.patients.getById, {
         patientId: appointment.patientId,
       }, { token });
+      const team = await fetchQuery(api.teams.getById, {
+        teamId: appointment.teamId,
+      }, { token });
 
       const appointmentStatus = (appointment as Record<string, unknown>).status;
       log.info('Appointment details fetched', { 
@@ -69,6 +72,7 @@ export async function GET(
         patient: patient
           ? { _id: patient._id, name: patient.name || null, phone: patient.phone }
           : null,
+        teamTimezone: team?.timezone || null,
       });
     } catch (error) {
       if (error instanceof AuthError) {

@@ -5,10 +5,8 @@ import { internal } from "./_generated/api.js";
 
 export const migrations = new Migrations<DataModel>(components.migrations);
 
-const DEFAULT_HOSPITAL_ADDRESS =
-  process.env.HOSPITAL_ADDRESS ||
-  "123 Medical Center Drive, Suite 456, San Francisco, CA 94102";
-const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
+const DEFAULT_HOSPITAL_ADDRESS = "123 Medical Center Drive, Suite 456, San Francisco, CA 94102";
+const DEFAULT_TIMEZONE = "America/Los_Angeles";
 
 // Define migration to remove name field from patients
 export const removePatientNames = migrations.define({
