@@ -192,27 +192,40 @@ describe("createProviderFromConfig", () => {
     expect(provider!.name).toBe("ghl");
   });
 
-  it("returns a TwilioProvider when provider is 'twilio' with env vars set", () => {
+  it("returns a TwilioProvider when provider is 'twilio' with config fromNumber", () => {
     process.env.TWILIO_ACCOUNT_SID = "ACtest";
     process.env.TWILIO_AUTH_TOKEN = "tok";
-    process.env.TWILIO_FROM_NUMBER = "+15559990000";
+
+    const provider = createProviderFromConfig({
+      provider: "twilio",
+      isEnabled: true,
+      fromNumber: "+15559990000",
+    });
+    expect(provider).not.toBeNull();
+    expect(provider!.name).toBe("twilio");
+  });
+
+  it("returns null for twilio when fromNumber is missing and no messaging service sid is set", () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "tok";
+    delete process.env.TWILIO_MESSAGING_SERVICE_SID;
+    delete process.env.TWILIO_FROM_NUMBER;
 
     const provider = createProviderFromConfig({
       provider: "twilio",
       isEnabled: true,
     });
-    expect(provider).not.toBeNull();
-    expect(provider!.name).toBe("twilio");
+    expect(provider).toBeNull();
   });
 });
 
 // ─── getDefaultProvider ───────────────────────────────────────────────────────
 
 describe("getDefaultProvider", () => {
-  it("returns TwilioProvider when Twilio env vars are set", () => {
+  it("returns TwilioProvider when Twilio env vars are set with Messaging Service SID", () => {
     process.env.TWILIO_ACCOUNT_SID = "ACtest";
     process.env.TWILIO_AUTH_TOKEN = "tok";
-    process.env.TWILIO_FROM_NUMBER = "+15559990000";
+    process.env.TWILIO_MESSAGING_SERVICE_SID = "MG_test_123";
     delete process.env.GHL_SMS_WEBHOOK_URL;
 
     const provider = getDefaultProvider();

@@ -62,6 +62,8 @@ const AUTH_USER = {
 describe("GET /api/appointments/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetchQuery.mockReset();
+    mockFetchMutation.mockReset();
     mockGetAuthenticatedUser.mockResolvedValue(AUTH_USER);
   });
 
@@ -134,6 +136,10 @@ describe("GET /api/appointments/[id]", () => {
         _id: "p1",
         name: "Alice",
         phone: "+1111",
+      })
+      .mockResolvedValueOnce({
+        _id: "t1",
+        timezone: "America/Phoenix",
       });
 
     const { GET } = await import("../src/app/api/appointments/[id]/route");
@@ -146,12 +152,15 @@ describe("GET /api/appointments/[id]", () => {
     expect(body.appointment.status).toBe("scheduled");
     expect(body.patient.name).toBe("Alice");
     expect(body.patient.phone).toBe("+1111");
+    expect(body.teamTimezone).toBe("America/Phoenix");
   });
 });
 
 describe("DELETE /api/appointments/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetchQuery.mockReset();
+    mockFetchMutation.mockReset();
     mockGetAuthenticatedUser.mockResolvedValue(AUTH_USER);
   });
 

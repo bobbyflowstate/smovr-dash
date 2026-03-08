@@ -25,15 +25,9 @@ import {
   type ReminderAttemptStatus,
 } from "./reminder_policies";
 import { createActionLogger, createMutationLogger, createQueryLogger } from "./lib/logger";
+import { getCanonicalAppUrl } from "./lib/appUrl";
 
-const DEFAULT_TIMEZONE = process.env.APPOINTMENT_TIMEZONE || "America/Los_Angeles";
-const DEFAULT_HOSPITAL_ADDRESS =
-  process.env.HOSPITAL_ADDRESS ||
-  "123 Medical Center Drive, Suite 456, San Francisco, CA 94102";
-// Use BASE_URL (not NEXT_PUBLIC_BASE_URL) since Convex doesn't have access to Next.js env vars
-// This must be set in Convex dashboard environment variables
-// Fallback to NEXT_PUBLIC_BASE_URL for backwards compatibility, but prefer BASE_URL
-const BASE_URL = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
+const BASE_URL = getCanonicalAppUrl();
 
 export type ReminderType = "24h" | "1h" | "birthday";
 const VALID_REMINDER_TYPES: ReminderType[] = ["24h", "1h", "birthday"];
@@ -321,8 +315,26 @@ export const checkAndSendReminders = internalAction({
           });
           teamCache.set(teamIdStr, team);
         }
-        const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
-        const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+        if (!team?.timezone || !team?.hospitalAddress) {
+          await recordAttempt({
+            appointmentId: appointment._id,
+            patientId: appointment.patientId,
+            reminderType: isWithinWindow("1h", hoursUntil) ? "1h" : "24h",
+            targetDate: appointment.dateTime,
+            status: "failed_precondition",
+            reasonCode: "PATIENT_NOT_FOUND",
+            noteOverride: "Team timezone/hospital address not configured",
+            details: {
+              hoursUntil: hoursUntil.toFixed(2),
+              hasTimezone: !!team?.timezone,
+              hasHospitalAddress: !!team?.hospitalAddress,
+            },
+            teamId: appointment.teamId,
+          });
+          continue;
+        }
+        const timezone: string = team.timezone;
+        const hospitalAddress: string = team.hospitalAddress;
 
         // Load team SMS config for provider selection
         if (!smsConfigCache.has(teamIdStr)) {
@@ -338,6 +350,23 @@ export const checkAndSendReminders = internalAction({
           } as TeamSmsConfig : null);
         }
         const teamSmsConfig = smsConfigCache.get(teamIdStr) ?? null;
+        if (!teamSmsConfig || !teamSmsConfig.isEnabled) {
+          await recordAttempt({
+            appointmentId: appointment._id,
+            patientId: appointment.patientId,
+            reminderType: isWithinWindow("1h", hoursUntil) ? "1h" : "24h",
+            targetDate: appointment.dateTime,
+            status: "failed_precondition",
+            reasonCode: "TEAM_SMS_CONFIG_NOT_CONFIGURED",
+            noteOverride: "Team SMS config is missing or disabled",
+            details: {
+              hasSmsConfig: !!teamSmsConfig,
+              isSmsEnabled: !!teamSmsConfig?.isEnabled,
+            },
+            teamId: appointment.teamId,
+          });
+          continue;
+        }
 
         const currentHour = getCurrentHourInTimezone(timezone);
         const inQuietHours = quietHoursValid ? isInQuietHours(currentHour, quietStart, quietEnd) : false;
@@ -501,7 +530,11 @@ export const checkAndSendReminders = internalAction({
                 } else {
                   const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
                   const status: ReminderAttemptStatus =
-                    reason === "BASE_URL_NOT_CONFIGURED" ? "failed_precondition" : "failed_webhook";
+                    (reason === "BASE_URL_NOT_CONFIGURED" ||
+                      reason === "TEAM_SETTINGS_NOT_CONFIGURED" ||
+                      reason === "TEAM_SMS_CONFIG_NOT_CONFIGURED")
+                      ? "failed_precondition"
+                      : "failed_webhook";
                   await recordAttempt({
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -693,7 +726,11 @@ export const checkAndSendReminders = internalAction({
                 } else {
                   const reason = result.errorMessage === "BASE_URL_NOT_CONFIGURED" ? "BASE_URL_NOT_CONFIGURED" : mapWebhookFailureToReason(result);
                   const status: ReminderAttemptStatus =
-                    reason === "BASE_URL_NOT_CONFIGURED" ? "failed_precondition" : "failed_webhook";
+                    (reason === "BASE_URL_NOT_CONFIGURED" ||
+                      reason === "TEAM_SETTINGS_NOT_CONFIGURED" ||
+                      reason === "TEAM_SMS_CONFIG_NOT_CONFIGURED")
+                      ? "failed_precondition"
+                      : "failed_webhook";
                   await recordAttempt({
                     appointmentId: appointment._id,
                     patientId: appointment.patientId,
@@ -834,8 +871,11 @@ export const testCheckReminders = internalAction({
             });
             teamCache.set(teamIdStr, team);
           }
-          const timezone: string = team?.timezone || DEFAULT_TIMEZONE;
-          const hospitalAddress: string = team?.hospitalAddress || DEFAULT_HOSPITAL_ADDRESS;
+          if (!team?.timezone || !team?.hospitalAddress) {
+            continue;
+          }
+          const timezone: string = team.timezone;
+          const hospitalAddress: string = team.hospitalAddress;
 
           // Load team SMS config for provider selection
           if (!smsConfigCache2.has(teamIdStr)) {
@@ -851,6 +891,14 @@ export const testCheckReminders = internalAction({
             } as TeamSmsConfig : null);
           }
           const teamSmsConfig = smsConfigCache2.get(teamIdStr) ?? null;
+          if (!teamSmsConfig || !teamSmsConfig.isEnabled) {
+            log.warn("Skipping reminder; team SMS config missing/disabled", {
+              teamId: appointment.teamId,
+              hasSmsConfig: !!teamSmsConfig,
+              isSmsEnabled: !!teamSmsConfig?.isEnabled,
+            });
+            continue;
+          }
 
           const currentHour = getCurrentHourInTimezone(timezone);
           const inQuietHours = isInQuietHours(currentHour, DEFAULT_QUIET_HOURS_START, DEFAULT_QUIET_HOURS_END);
@@ -1157,10 +1205,16 @@ export const recordAppointmentSmsAttempt = mutation({
     }
 
     const nowISO = new Date().toISOString();
-    const status: ReminderAttemptStatus = args.webhookResult.ok ? "succeeded" : "failed_webhook";
     const reasonCode: ReminderAttemptReasonCode = args.webhookResult.ok
       ? "SENT"
       : mapWebhookFailureToReason(args.webhookResult as unknown as SMSWebhookResult);
+    const status: ReminderAttemptStatus = args.webhookResult.ok
+      ? "succeeded"
+      : (reasonCode === "TEAM_SETTINGS_NOT_CONFIGURED" ||
+          reasonCode === "TEAM_SMS_CONFIG_NOT_CONFIGURED" ||
+          reasonCode === "BASE_URL_NOT_CONFIGURED")
+        ? "failed_precondition"
+        : "failed_webhook";
 
     const messageLabel =
       args.messageType === "booking_confirmation"
@@ -1171,7 +1225,9 @@ export const recordAppointmentSmsAttempt = mutation({
 
     const note = args.webhookResult.ok
       ? `${messageLabel} sent successfully. It may take 1–3 minutes to arrive on the patient's phone.`
-      : `${messageLabel} not sent due to SMS webhook failure.`;
+      : status === "failed_precondition"
+        ? `${messageLabel} not sent due to missing team settings configuration.`
+        : `${messageLabel} not sent due to SMS webhook failure.`;
 
     log.info("Recording SMS attempt", { status, reasonCode });
 
@@ -1623,4 +1679,3 @@ export const seedRemindersTestData = internalMutation({
     };
   },
 });
-

@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Id } from "../../../convex/_generated/dataModel";
 import {
-  APPOINTMENT_TIMEZONE,
   formatTimeInAppointmentTimezone,
   formatFullDateInAppointmentTimezone,
   getTimezoneDisplayName,
@@ -13,13 +12,20 @@ import {
 interface AppointmentsClientProps {
   userName: string;
   teamName: string;
+  initialTeamTimezone: string | null;
+  initialTeamHospitalAddress: string | null;
 }
 
-export default function AppointmentsClient({ userName, teamName }: AppointmentsClientProps) {
+export default function AppointmentsClient({
+  userName,
+  teamName,
+  initialTeamTimezone,
+  initialTeamHospitalAddress,
+}: AppointmentsClientProps) {
   const [appointments, setAppointments] = useState<any[] | null>(null);
   const [currentTeamName, setCurrentTeamName] = useState<string>(teamName);
-  const [teamTimezone, setTeamTimezone] = useState<string | null>(null);
-  const [teamHospitalAddress, setTeamHospitalAddress] = useState<string | null>(null);
+  const [teamTimezone, setTeamTimezone] = useState<string | null>(initialTeamTimezone);
+  const [teamHospitalAddress, setTeamHospitalAddress] = useState<string | null>(initialTeamHospitalAddress);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [view, setView] = useState<"upcoming" | "cancelled">("upcoming");
@@ -97,14 +103,16 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
     });
 
-  const groupedAppointments = filteredAppointments?.reduce((acc, appointment) => {
-    const date = formatFullDateInAppointmentTimezone(new Date(appointment.dateTime));
-    if (!acc[date]) {
-      acc[date] = [];
-    }
-    acc[date].push(appointment);
-    return acc;
-  }, {} as Record<string, any[]>);
+  const groupedAppointments = teamTimezone
+    ? filteredAppointments?.reduce((acc, appointment) => {
+        const date = formatFullDateInAppointmentTimezone(new Date(appointment.dateTime), teamTimezone);
+        if (!acc[date]) {
+          acc[date] = [];
+        }
+        acc[date].push(appointment);
+        return acc;
+      }, {} as Record<string, any[]>)
+    : null;
 
   const handleCancelClick = async (appointmentId: Id<"appointments">) => {
     if (cancelConfirmationId === appointmentId) {
@@ -247,13 +255,19 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
       )}
       
       {/* Appointments */}
-      {groupedAppointments && Object.keys(groupedAppointments).length > 0 ? (
+      {!isLoading && !teamTimezone ? (
+        <div className={`${cancelledTint} rounded-xl shadow-sm border p-8 text-center transition-colors`}>
+          <p className="text-red-700 dark:text-red-400">
+            Team timezone is not configured. Update `teams.timezone` in Convex to view appointment times.
+          </p>
+        </div>
+      ) : groupedAppointments && Object.keys(groupedAppointments).length > 0 ? (
         Object.entries(groupedAppointments).map(([date, appointmentsForDay]) => (
           <div key={date} className={`${cancelledTint} rounded-xl shadow-sm border transition-colors overflow-hidden`}>
             <div className={`px-6 py-4 border-b ${view === "cancelled" ? "border-red-200 dark:border-red-800" : "border-gray-200 dark:border-gray-700"}`}>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{date}</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Times shown in {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}
+                Times shown in {teamTimezone ? getTimezoneDisplayName(teamTimezone) : "Not configured"}
               </p>
             </div>
             
@@ -262,7 +276,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
               <table className="min-w-full">
                 <thead className={cancelledSubtleTint}>
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time ({getTimezoneDisplayName(APPOINTMENT_TIMEZONE)})</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time ({teamTimezone ? getTimezoneDisplayName(teamTimezone) : "Not configured"})</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Patient Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Notes</th>
@@ -274,7 +288,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                   {(appointmentsForDay as any[]).map((appointment: any) => (
                     <tr key={appointment._id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                        {formatTimeInAppointmentTimezone(new Date(appointment.dateTime))}
+                        {teamTimezone ? formatTimeInAppointmentTimezone(new Date(appointment.dateTime), teamTimezone) : "Not configured"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                         <div className="font-medium">{appointment.patient?.name || 'N/A'}</div>
@@ -327,7 +341,7 @@ export default function AppointmentsClient({ userName, teamName }: AppointmentsC
                       </Link>
                     </div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {formatTimeInAppointmentTimezone(new Date(appointment.dateTime))}
+                      {teamTimezone ? formatTimeInAppointmentTimezone(new Date(appointment.dateTime), teamTimezone) : "Not configured"}
                     </p>
                   </div>
                   {appointment.notes && (

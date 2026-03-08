@@ -18,6 +18,8 @@ import type { SendResult } from "./sms_provider";
 
 export type SMSWebhookFailureReason =
   | "WEBHOOK_URL_NOT_CONFIGURED"
+  | "TEAM_SMS_CONFIG_NOT_CONFIGURED"
+  | "TEAM_SETTINGS_NOT_CONFIGURED"
   | "HTTP_NON_RETRYABLE"
   | "HTTP_RETRY_EXHAUSTED"
   | "TIMEOUT"
@@ -328,4 +330,3 @@ export function formatReminder1hMessage(
     `• 30 mins late / 30 minutos tarde:\n${url30}\n\n` +
     `• Need to reschedule / Necesita reprogramar:\n${urlReschedule}`;
 }
-

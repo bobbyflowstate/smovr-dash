@@ -6,7 +6,6 @@ import "react-datepicker/dist/react-datepicker.css";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import {
-  APPOINTMENT_TIMEZONE,
   extractComponentsInTimezone,
   convertToTimezoneDisplayDate,
   convertFromTimezoneDisplayDate,
@@ -18,6 +17,7 @@ import { Id } from '../../../convex/_generated/dataModel';
 interface SubmitFormProps {
   userName: string;
   teamName: string;
+  teamTimezone: string;
 }
 
 interface Patient {
@@ -34,7 +34,7 @@ interface ExistingAppointment {
   };
 }
 
-export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
+export default function SubmitForm({ userName, teamName, teamTimezone }: SubmitFormProps) {
   const [phone, setPhone] = useState<string | undefined>("");
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -64,7 +64,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
 
   // Convert UTC date to display date (shows appointment timezone in DatePicker)
   const appointmentDateTime = appointmentDateTimeUTC 
-    ? convertToTimezoneDisplayDate(appointmentDateTimeUTC, APPOINTMENT_TIMEZONE)
+    ? convertToTimezoneDisplayDate(appointmentDateTimeUTC, teamTimezone)
     : null;
   
   // Handle DatePicker change - convert from display date back to UTC
@@ -74,7 +74,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
       return;
     }
     // Convert the selected date (which represents appointment timezone time) back to UTC
-    const utcDate = convertFromTimezoneDisplayDate(date, APPOINTMENT_TIMEZONE);
+    const utcDate = convertFromTimezoneDisplayDate(date, teamTimezone);
     setAppointmentDateTimeUTC(utcDate);
   };
 
@@ -141,7 +141,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
       console.log('SubmitForm: Submitting appointment for user:', userName);
 
       // Extract time components as they appear in the backend's configured timezone
-      const timezoneComponents = extractComponentsInTimezone(appointmentDateTimeUTC, APPOINTMENT_TIMEZONE);
+      const timezoneComponents = extractComponentsInTimezone(appointmentDateTimeUTC, teamTimezone);
       
       const appointmentResponse = await fetch('/api/appointments', {
         method: 'POST',
@@ -368,7 +368,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                 onChange={handleDateChange}
                 showTimeSelect
                 dateFormat="Pp"
-                minDate={convertToTimezoneDisplayDate(new Date(), APPOINTMENT_TIMEZONE)}
+                minDate={convertToTimezoneDisplayDate(new Date(), teamTimezone)}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 dark:focus:border-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
               />
             </div>
@@ -377,10 +377,10 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">Selected time:</span>
                   <span className="text-sm font-mono text-gray-900 dark:text-gray-100">
-                    {formatFullDateTimeInAppointmentTimezone(appointmentDateTimeUTC)}
+                    {formatFullDateTimeInAppointmentTimezone(appointmentDateTimeUTC, teamTimezone)}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-700">
-                    {getTimezoneDisplayName(APPOINTMENT_TIMEZONE)}
+                    {getTimezoneDisplayName(teamTimezone)}
                   </span>
                 </div>
               )}
@@ -450,7 +450,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                   {existingAppointment.patient.phone}
                 </p>
                 <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                  {formatFullDateTimeInAppointmentTimezone(new Date(existingAppointment.dateTime))}
+                  {formatFullDateTimeInAppointmentTimezone(new Date(existingAppointment.dateTime), teamTimezone)}
                 </p>
               </div>
               
@@ -462,7 +462,7 @@ export default function SubmitForm({ userName, teamName }: SubmitFormProps) {
                   {pendingAppointmentData.name} - {pendingAppointmentData.phone}
                 </p>
                 <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                  {formatFullDateTimeInAppointmentTimezone(pendingAppointmentData.appointmentDateTimeUTC)}
+                  {formatFullDateTimeInAppointmentTimezone(pendingAppointmentData.appointmentDateTimeUTC, teamTimezone)}
                 </p>
               </div>
             </div>

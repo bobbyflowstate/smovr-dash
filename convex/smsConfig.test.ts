@@ -94,6 +94,22 @@ describe("smsConfig.getByTeamId", () => {
     expect(config1!.provider).toBe("ghl");
     expect(config2!.provider).toBe("twilio");
   });
+
+  it("throws when duplicate configs exist for one team", async () => {
+    const t = convexTest(schema, modules);
+    const { teamId } = await seedWithConfig(t, { provider: "ghl" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("teamSmsConfig", {
+        teamId,
+        provider: "mock",
+        isEnabled: true,
+      });
+    });
+
+    await expect(
+      t.query(internal.smsConfig.getByTeamId, { teamId }),
+    ).rejects.toThrowError("Duplicate SMS configuration rows found for team.");
+  });
 });
 
 // ─── getForCurrentUser ────────────────────────────────────────────────────────
@@ -189,6 +205,26 @@ describe("smsConfig.upsert", () => {
         isEnabled: true,
       }),
     ).rejects.toThrowError("User not found");
+  });
+
+  it("throws when duplicate configs exist for the user's team", async () => {
+    const t = convexTest(schema, modules);
+    const { teamId } = await seedWithConfig(t, { provider: "ghl" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("teamSmsConfig", {
+        teamId,
+        provider: "mock",
+        isEnabled: true,
+      });
+    });
+
+    await expect(
+      t.mutation(api.smsConfig.upsert, {
+        userEmail: "smith@acme.test",
+        provider: "twilio",
+        isEnabled: true,
+      }),
+    ).rejects.toThrowError("Duplicate SMS configuration rows found for team.");
   });
 });
 

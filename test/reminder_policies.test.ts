@@ -92,6 +92,26 @@ describe("reminder policies", () => {
         errorMessage: "Network error",
       })
     ).toBe("WEBHOOK_NETWORK_ERROR");
+
+    expect(
+      mapWebhookFailureToReason({
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "TEAM_SETTINGS_NOT_CONFIGURED",
+        errorMessage: "TEAM_SETTINGS_NOT_CONFIGURED",
+      })
+    ).toBe("TEAM_SETTINGS_NOT_CONFIGURED");
+
+    expect(
+      mapWebhookFailureToReason({
+        ok: false,
+        attemptCount: 0,
+        httpStatus: null,
+        failureReason: "TEAM_SMS_CONFIG_NOT_CONFIGURED",
+        errorMessage: "TEAM_SMS_CONFIG_NOT_CONFIGURED",
+      })
+    ).toBe("TEAM_SMS_CONFIG_NOT_CONFIGURED");
   });
 
   it("success note mentions possible delivery delay", () => {
@@ -107,6 +127,12 @@ describe("reminder policies", () => {
     expect(noteForAttempt("failed_precondition", "INVALID_QUIET_HOURS")).toContain(
       "Please contact your IT department."
     );
+    expect(noteForAttempt("failed_precondition", "TEAM_SETTINGS_NOT_CONFIGURED")).toContain(
+      "Please contact your IT department."
+    );
+    expect(noteForAttempt("failed_precondition", "TEAM_SMS_CONFIG_NOT_CONFIGURED")).toContain(
+      "Please contact your IT department."
+    );
   });
 
   it("skipped_booking_confirmation note is admin-readable", () => {
@@ -115,4 +141,3 @@ describe("reminder policies", () => {
     );
   });
 });
-

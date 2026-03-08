@@ -39,11 +39,18 @@ export default async function AppointmentsWrapper() {
   const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
   const userName = userInfo?.userName || "User";
   const teamName = userInfo?.teamName || "Unknown Team";
+  const team = userInfo?.teamId
+    ? await fetchQuery(api.teams.getById, { teamId: userInfo.teamId }, { token })
+    : null;
+  const teamTimezone = team?.timezone || null;
+  const teamHospitalAddress = team?.hospitalAddress || null;
 
   return (
     <AppointmentsClient 
       userName={userName}
       teamName={teamName}
+      initialTeamTimezone={teamTimezone}
+      initialTeamHospitalAddress={teamHospitalAddress}
     />
   );
 }

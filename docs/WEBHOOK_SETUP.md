@@ -16,8 +16,8 @@ GHL_SMS_WEBHOOK_URL=https://your-webhook-endpoint.com/sms-webhook
 
 # Base URL - Required for SMS message links
 # Should match your deployed application URL
-# NOTE: This must also be set in Convex dashboard as BASE_URL (without NEXT_PUBLIC_ prefix)
-# Convex reminder webhooks run in a separate environment and need BASE_URL set there
+# NOTE: This must also be set in Convex dashboard as SITE_URL
+# Convex reminder webhooks run in a separate environment and need SITE_URL set there
 NEXT_PUBLIC_BASE_URL=https://your-app-domain.com
 
 # Quiet Hours - Optional
@@ -173,7 +173,7 @@ GHL_SMS_WEBHOOK_URL=https://your-webhook-endpoint.com/sms-webhook
 # Base URL - REQUIRED for SMS notification links
 # This must match your production domain (e.g., https://your-app-domain.com)
 # Without this, users will receive localhost links in SMS notifications!
-BASE_URL=https://your-app-domain.com
+SITE_URL=https://your-app-domain.com
 
 # Optional: Quiet hours and timezone
 SMS_QUIET_HOURS_START=22
@@ -184,7 +184,7 @@ HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
 
 **Critical**: 
 - If `GHL_SMS_WEBHOOK_URL` is not set, SMS webhooks will be skipped silently
-- If `BASE_URL` is not set in Convex, reminder webhooks will fail with an error and no SMS notifications will be sent. This prevents accidentally sending localhost links to users.
+- If `SITE_URL` is not set in Convex, reminder webhooks will fail with an error and no SMS notifications will be sent. This prevents accidentally sending localhost links to users.
 
 ## Notes
 
@@ -192,10 +192,9 @@ HOSPITAL_ADDRESS=123 Medical Center Drive, Suite 456, San Francisco, CA 94102
 - Webhook failures do not prevent appointment creation or cancellation
 - All webhook errors are logged to the console
 - If `GHL_SMS_WEBHOOK_URL` is not set, all SMS webhooks are skipped silently
-- **If `BASE_URL` is not set in Convex dashboard, reminder webhooks will fail** - this prevents sending localhost links
+- **If `SITE_URL` is not set in Convex dashboard, reminder webhooks will fail** - this prevents sending localhost links
 - Webhook requests have a 10-second timeout
 - Only future appointments are considered when checking for existing appointments
 - Reminder webhooks are sent via hourly cron jobs, not immediately when appointments are created
 - All messages are pre-formatted in the application code - the webhook receives ready-to-send SMS text
 - GoHighLevel workflows should extract the `phone` and `message` fields and send the SMS directly
-

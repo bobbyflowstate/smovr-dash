@@ -182,14 +182,12 @@ export class TwilioProvider implements SMSProvider {
 /**
  * Create a Twilio provider from environment variables
  * 
- * Supports two modes:
- * 1. With MessagingServiceSid (recommended): Set TWILIO_MESSAGING_SERVICE_SID
- * 2. With From number: Set {prefix}_TWILIO_FROM_NUMBER
+ * Supports MessagingServiceSid mode:
+ * Set {prefix}_TWILIO_MESSAGING_SERVICE_SID (or global fallback).
  */
 export function createTwilioFromEnv(envPrefix: string): TwilioProvider {
   const accountSid = process.env[`${envPrefix}_TWILIO_ACCOUNT_SID`] || process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env[`${envPrefix}_TWILIO_AUTH_TOKEN`] || process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env[`${envPrefix}_TWILIO_FROM_NUMBER`] || process.env.TWILIO_FROM_NUMBER;
   const messagingServiceSid = process.env[`${envPrefix}_TWILIO_MESSAGING_SERVICE_SID`] || process.env.TWILIO_MESSAGING_SERVICE_SID;
   
   if (!accountSid || !authToken) {
@@ -199,13 +197,14 @@ export function createTwilioFromEnv(envPrefix: string): TwilioProvider {
     );
   }
   
-  if (!fromNumber && !messagingServiceSid) {
+  if (!messagingServiceSid) {
     throw new Error(
-      `Missing Twilio sender. Set TWILIO_MESSAGING_SERVICE_SID (recommended) or TWILIO_FROM_NUMBER`
+      `Missing Twilio sender. Set TWILIO_MESSAGING_SERVICE_SID ` +
+      `(or ${envPrefix}_TWILIO_MESSAGING_SERVICE_SID)`
     );
   }
   
-  return new TwilioProvider({ accountSid, authToken, fromNumber, messagingServiceSid });
+  return new TwilioProvider({ accountSid, authToken, messagingServiceSid });
 }
 
 /**
@@ -214,17 +213,15 @@ export function createTwilioFromEnv(envPrefix: string): TwilioProvider {
 export function createTwilioFromGlobalEnv(): TwilioProvider {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_FROM_NUMBER;
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
   
   if (!accountSid || !authToken) {
     throw new Error('Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN');
   }
   
-  if (!fromNumber && !messagingServiceSid) {
-    throw new Error('Missing TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER');
+  if (!messagingServiceSid) {
+    throw new Error('Missing TWILIO_MESSAGING_SERVICE_SID');
   }
   
-  return new TwilioProvider({ accountSid, authToken, fromNumber, messagingServiceSid });
+  return new TwilioProvider({ accountSid, authToken, messagingServiceSid });
 }
-
