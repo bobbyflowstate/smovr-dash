@@ -28,6 +28,7 @@ interface ConversationClientProps {
   patientPhone: string;
   teamName: string;
   userName: string;
+  teamEntrySlug: string | null;
 }
 
 const PAGE_SIZE = 50;
@@ -80,6 +81,7 @@ export default function ConversationClient({
   patientPhone,
   teamName,
   userName,
+  teamEntrySlug,
 }: ConversationClientProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -89,6 +91,7 @@ export default function ConversationClient({
   const [hasMore, setHasMore] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showComposerMenu, setShowComposerMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -178,7 +181,10 @@ export default function ConversationClient({
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || isSending) return;
+    await sendMessage(messageText.trim());
+  };
 
+  const sendMessage = async (text: string) => {
     setIsSending(true);
     setError(null);
 
@@ -188,7 +194,7 @@ export default function ConversationClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patientId,
-          body: messageText.trim(),
+          body: text,
         }),
       });
 
@@ -200,13 +206,14 @@ export default function ConversationClient({
 
       // Clear input and scroll to the new message
       setMessageText("");
+      setShowComposerMenu(false);
       shouldScrollRef.current = true;
       
       // Optimistically add the message
       const optimisticMessage: Message = {
         _id: data.messageId || `temp-${Date.now()}`,
         direction: "outbound",
-        body: messageText.trim(),
+        body: text,
         status: data.ok ? "sent" : "failed",
         createdAt: new Date().toISOString(),
         senderName: userName,
@@ -218,6 +225,16 @@ export default function ConversationClient({
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleSendAppointmentRequestLink = async () => {
+    if (!teamEntrySlug || typeof window === "undefined") {
+      setError("Team entry slug is not configured. Update it in Settings.");
+      return;
+    }
+    const bookingUrl = `${window.location.origin}/book/${teamEntrySlug}`;
+    const text = `To request an appointment, please use this link: ${bookingUrl}`;
+    await sendMessage(text);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -233,6 +250,7 @@ export default function ConversationClient({
     body = body.replace(/\{\{patientName\}\}/g, patientName || "");
     setMessageText(body);
     setShowTemplates(false);
+    setShowComposerMenu(false);
     textareaRef.current?.focus();
   };
 
@@ -446,19 +464,43 @@ export default function ConversationClient({
       <div className="bg-white dark:bg-gray-800 rounded-b-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-colors">
         <div className="flex items-end gap-3">
           {/* Template button */}
-          <button
-            onClick={() => setShowTemplates(!showTemplates)}
-            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
-              showTemplates
-                ? "bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400"
-                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-            }`}
-            title="Quick replies"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowComposerMenu((current) => !current)}
+              className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
+                showComposerMenu
+                  ? "bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400"
+                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+              }`}
+              title="Message actions"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+
+            {showComposerMenu && (
+              <div className="absolute bottom-full mb-2 left-0 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-1 z-10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTemplates((current) => !current);
+                    setShowComposerMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                >
+                  {showTemplates ? "Hide Quick Replies" : "Show Quick Replies"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendAppointmentRequestLink}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                >
+                  Send Appointment Request Link
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Text input */}
           <div className="flex-1 relative">
@@ -478,7 +520,12 @@ export default function ConversationClient({
           <button
             onClick={handleSendMessage}
             disabled={!messageText.trim() || isSending}
-            className="flex-shrink-0 p-3 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
+              !messageText.trim() || isSending
+                ? "bg-blue-600 dark:bg-blue-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
+            }`}
+            title="Send message"
           >
             {isSending ? (
               <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -499,4 +546,3 @@ export default function ConversationClient({
     </div>
   );
 }
-

@@ -15,13 +15,14 @@ function hoursLater(now: Date, hours: number): Date {
 async function seed(
   t: ReturnType<typeof convexTest>,
   appointmentDateTime: string,
-  teamOverrides?: { timezone?: string; hospitalAddress?: string },
+  teamOverrides?: { timezone?: string; hospitalAddress?: string; languageMode?: "en" | "en_es" },
 ) {
   return t.run(async (ctx) => {
     const teamId = await ctx.db.insert("teams", {
       name: "Acme Dental",
       timezone: teamOverrides?.timezone,
       hospitalAddress: teamOverrides?.hospitalAddress,
+      languageMode: teamOverrides?.languageMode,
     });
     const patientId = await ctx.db.insert("patients", {
       phone: "+15551234567",
@@ -223,5 +224,45 @@ describe("reminders.checkAndSendReminders timezone behavior", () => {
     expect(attempt).not.toBeNull();
     expect(attempt!.status).toBe("failed_precondition");
     expect(attempt!.reasonCode).toBe("TEAM_SMS_CONFIG_NOT_CONFIGURED");
+  });
+
+  it("formats 24h reminder message using team's languageMode", async () => {
+    const now = new Date("2026-03-10T20:00:00Z");
+    vi.setSystemTime(now);
+
+    const apptTime = hoursLater(now, 24);
+    const t = convexTest(schema, modules);
+    const { appointmentId } = await seed(t, apptTime.toISOString(), {
+      timezone: "America/Phoenix",
+      hospitalAddress: "123 Main St",
+      languageMode: "en",
+    });
+    await t.run(async (ctx) => {
+      const appointment = await ctx.db.get(appointmentId);
+      await ctx.db.insert("teamSmsConfig", {
+        teamId: appointment!.teamId,
+        provider: "mock",
+        isEnabled: true,
+      });
+    });
+
+    await t.action(internal.reminders.checkAndSendReminders, {});
+
+    const attempt = await t.run(async (ctx) =>
+      ctx.db
+        .query("reminderAttempts")
+        .withIndex("by_appointment_type", (q: any) =>
+          q.eq("appointmentId", appointmentId).eq("reminderType", "24h"),
+        )
+        .filter((q: any) => q.eq(q.field("status"), "succeeded"))
+        .first(),
+    );
+
+    expect(attempt).not.toBeNull();
+    const details = JSON.parse(attempt!.detailsJson || "{}");
+    const messageBody = details?.webhook?.messageBody as string;
+    expect(typeof messageBody).toBe("string");
+    expect(messageBody).toContain("Address:");
+    expect(messageBody).not.toContain("Dirección:");
   });
 });

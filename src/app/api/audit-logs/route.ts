@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
         );
       }
       const contactPhone = team?.contactPhone || DEFAULT_TEAM_CONTACT_PHONE || null;
+      const languageMode = (team?.languageMode as "en" | "en_es" | undefined) ?? "en_es";
 
       // Check if appointment date has passed (next day or later)
       // We allow late submissions on the same day, even if the appointment time has passed
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
       if (appointmentDateOnly < todayDateOnly) {
         log.warn('Appointment has passed');
         return NextResponse.json(
-          { error: 'Appointment has already passed', contactPhone },
+          { error: 'Appointment has already passed', contactPhone, languageMode },
           { status: 410 }
         ); // 410 Gone
       }
@@ -185,7 +186,7 @@ export async function POST(request: NextRequest) {
       });
 
       log.info('Audit log entry created', { auditLogId });
-      return NextResponse.json({ success: true, logId: auditLogId, contactPhone });
+      return NextResponse.json({ success: true, logId: auditLogId, contactPhone, languageMode });
     } catch (error) {
       log.error('Failed to create audit log entry', error);
       return NextResponse.json({ 

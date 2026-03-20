@@ -51,7 +51,7 @@ export default async function Home() {
           </div>
 
           {/* Navigation Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
             <Link 
               href="/appointments" 
               className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
@@ -69,23 +69,6 @@ export default async function Home() {
               </p>
             </Link>
             
-            <Link 
-              href="/submit" 
-              className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
-            >
-              <div className="flex items-center justify-center w-12 h-12 bg-green-100 dark:bg-green-900 rounded-lg mb-4 group-hover:bg-green-200 dark:group-hover:bg-green-800 transition-colors">
-                <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Submit
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-sm">
-                Submit patient information securely
-              </p>
-            </Link>
-
             <Link 
               href="/patients" 
               className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
@@ -134,6 +117,41 @@ export default async function Home() {
               </h2>
               <p className="text-gray-600 dark:text-gray-400 text-sm">
                 Track patient responses to appointment notifications
+              </p>
+            </Link>
+
+            <Link
+              href="/requests"
+              className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
+            >
+              <div className="flex items-center justify-center w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-lg mb-4 group-hover:bg-yellow-200 dark:group-hover:bg-yellow-800 transition-colors">
+                <svg className="w-6 h-6 text-yellow-700 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Requests
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                Manage incoming scheduling requests
+              </p>
+            </Link>
+
+            <Link
+              href="/settings"
+              className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
+            >
+              <div className="flex items-center justify-center w-12 h-12 bg-indigo-100 dark:bg-indigo-900 rounded-lg mb-4 group-hover:bg-indigo-200 dark:group-hover:bg-indigo-800 transition-colors">
+                <svg className="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.592 1.01c1.527-.94 3.295.826 2.356 2.353a1.724 1.724 0 001.01 2.592c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.01 2.592c.94 1.527-.826 3.295-2.353 2.356a1.724 1.724 0 00-2.592 1.01c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.592-1.01c-1.527.94-3.295-.826-2.356-2.353a1.724 1.724 0 00-1.01-2.592c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.01-2.592c-.94-1.527.826-3.295 2.353-2.356.996.614 2.296.07 2.592-1.01z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Settings
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                Update team profile and messaging settings
               </p>
             </Link>
           </div>

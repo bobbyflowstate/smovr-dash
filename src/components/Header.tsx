@@ -11,7 +11,6 @@ export default async function Header() {
     return null;
   }
 
-  let userName = "User";
   let teamId: string | null = null;
   let teamName: string | null = null;
 
@@ -19,7 +18,6 @@ export default async function Header() {
     const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
 
     if (userInfo) {
-      userName = userInfo.userName || userName;
       teamId = userInfo.teamId ?? null;
       teamName = userInfo.teamName || null;
     }
@@ -29,7 +27,6 @@ export default async function Header() {
 
   return (
     <ClientHeader
-      userName={userName}
       teamId={teamId}
       teamName={teamName}
     />

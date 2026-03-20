@@ -2,12 +2,14 @@
 
 import { AppointmentStatus } from "@/lib/use-appointment-action";
 import { formatPhoneForDisplay, normalizePhoneForTel } from "@/lib/phone-utils";
+import type { AppointmentLanguageMode } from "@/lib/use-appointment-action";
 
 interface AppointmentStatusCardProps {
   status: AppointmentStatus;
+  languageMode?: AppointmentLanguageMode;
   errorMessage?: string;
   successTitle?: string;
-  successMessage?: string; // Can be bilingual (e.g., "English / Spanish") or just English
+  successMessage?: string;
   successSubtext?: string;
   showPhoneNumber?: boolean;
   phoneNumber?: string; // E.164 preferred (e.g., +14155550123)
@@ -15,16 +17,23 @@ interface AppointmentStatusCardProps {
 
 export default function AppointmentStatusCard({
   status,
+  languageMode = "en_es",
   errorMessage,
-  successTitle = "No worries! / ¡No se preocupe!",
-  successMessage = "We'll be waiting for you. / Lo estaremos esperando.",
+  successTitle,
+  successMessage,
   successSubtext,
   showPhoneNumber = false,
   phoneNumber,
 }: AppointmentStatusCardProps) {
+  const isEnglishOnly = languageMode === "en";
   const phoneDisplay = phoneNumber ? formatPhoneForDisplay(phoneNumber) : null;
   const phoneTel = phoneNumber ? normalizePhoneForTel(phoneNumber) : null;
   const canShowPhone = !!(showPhoneNumber && phoneDisplay && phoneTel);
+  const resolvedSuccessTitle = successTitle ?? (isEnglishOnly ? "No worries!" : "No worries! / ¡No se preocupe!");
+  const resolvedSuccessMessage =
+    successMessage ?? (isEnglishOnly ? "We'll be waiting for you." : "We'll be waiting for you. / Lo estaremos esperando.");
+  const linesFromText = (value: string): string[] =>
+    isEnglishOnly ? [value.split(" / ")[0]] : value.split(" / ");
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
@@ -47,14 +56,16 @@ export default function AppointmentStatusCard({
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Processing... / Procesando...
+              {isEnglishOnly ? "Processing..." : "Processing... / Procesando..."}
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Please wait while we record your status.
             </p>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Por favor espere mientras registramos su estado.
-            </p>
+            {!isEnglishOnly && (
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Por favor espere mientras registramos su estado.
+              </p>
+            )}
           </>
         )}
 
@@ -92,20 +103,14 @@ export default function AppointmentStatusCard({
               )}
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              {successTitle}
+              {resolvedSuccessTitle}
             </h1>
-            {successMessage && (
-              <>
-                <p className="text-lg text-gray-700 dark:text-gray-300 mb-2">
-                  {successMessage.split(' / ')[0]}
+            {resolvedSuccessMessage &&
+              linesFromText(resolvedSuccessMessage).map((line, idx) => (
+                <p key={`${line}-${idx}`} className="text-lg text-gray-700 dark:text-gray-300 mb-2">
+                  {line}
                 </p>
-                {successMessage.includes(' / ') && (
-                  <p className="text-lg text-gray-700 dark:text-gray-300 mb-2">
-                    {successMessage.split(' / ')[1]}
-                  </p>
-                )}
-              </>
-            )}
+              ))}
             {canShowPhone && (
               <>
                 <a
@@ -144,22 +149,26 @@ export default function AppointmentStatusCard({
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Appointment Not Found / Cita no encontrada
+              {isEnglishOnly ? "Appointment Not Found" : "Appointment Not Found / Cita no encontrada"}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-2">
               We couldn&apos;t find this appointment. Please check the link or contact your provider.
             </p>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              No pudimos encontrar esta cita. Por favor verifique el enlace o contacte a su proveedor.
-            </p>
+            {!isEnglishOnly && (
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                No pudimos encontrar esta cita. Por favor verifique el enlace o contacte a su proveedor.
+              </p>
+            )}
             {canShowPhone && (
               <>
                 <p className="text-lg text-gray-700 dark:text-gray-300 mb-2 mt-4">
                   Please call us at
                 </p>
-                <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
-                  Por favor llámenos al
-                </p>
+                {!isEnglishOnly && (
+                  <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
+                    Por favor llámenos al
+                  </p>
+                )}
                 <a
                   href={`tel:${phoneTel}`}
                   className="inline-block text-2xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
@@ -189,22 +198,26 @@ export default function AppointmentStatusCard({
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Appointment Already Passed / La cita ya pasó
+              {isEnglishOnly ? "Appointment Already Passed" : "Appointment Already Passed / La cita ya pasó"}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-2">
               This appointment has already passed. If you need assistance, please contact your provider.
             </p>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Esta cita ya pasó. Si necesita asistencia, por favor contacte a su proveedor.
-            </p>
+            {!isEnglishOnly && (
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Esta cita ya pasó. Si necesita asistencia, por favor contacte a su proveedor.
+              </p>
+            )}
             {canShowPhone && (
               <>
                 <p className="text-lg text-gray-700 dark:text-gray-300 mb-2 mt-4">
                   Please call us at
                 </p>
-                <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
-                  Por favor llámenos al
-                </p>
+                {!isEnglishOnly && (
+                  <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
+                    Por favor llámenos al
+                  </p>
+                )}
                 <a
                   href={`tel:${phoneTel}`}
                   className="inline-block text-2xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
@@ -234,22 +247,26 @@ export default function AppointmentStatusCard({
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Something went wrong / Algo salió mal
+              {isEnglishOnly ? "Something went wrong" : "Something went wrong / Algo salió mal"}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-2">
               {errorMessage || "Unable to process your request. Please contact your provider."}
             </p>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {errorMessage || "No se pudo procesar su solicitud. Por favor contacte a su proveedor."}
-            </p>
+            {!isEnglishOnly && (
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                {errorMessage || "No se pudo procesar su solicitud. Por favor contacte a su proveedor."}
+              </p>
+            )}
             {canShowPhone && (
               <>
                 <p className="text-lg text-gray-700 dark:text-gray-300 mb-2 mt-4">
                   Please call us at
                 </p>
-                <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
-                  Por favor llámenos al
-                </p>
+                {!isEnglishOnly && (
+                  <p className="text-lg text-gray-700 dark:text-gray-300 mb-4">
+                    Por favor llámenos al
+                  </p>
+                )}
                 <a
                   href={`tel:${phoneTel}`}
                   className="inline-block text-2xl font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
@@ -264,4 +281,3 @@ export default function AppointmentStatusCard({
     </div>
   );
 }
-

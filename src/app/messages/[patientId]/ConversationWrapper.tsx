@@ -44,6 +44,10 @@ export default async function ConversationWrapper({ patientId }: ConversationWra
   const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
   const userName = userInfo?.userName || "User";
   const teamName = userInfo?.teamName || "Unknown Team";
+  const team = userInfo?.teamId
+    ? await fetchQuery(api.teams.getById, { teamId: userInfo.teamId }, { token })
+    : null;
+  const teamEntrySlug = team?.entrySlug || null;
 
   const patient = await fetchQuery(
     api.patients.getById,
@@ -80,6 +84,7 @@ export default async function ConversationWrapper({ patientId }: ConversationWra
       patientPhone={patientPhone}
       teamName={teamName}
       userName={userName}
+      teamEntrySlug={teamEntrySlug}
     />
   );
 }

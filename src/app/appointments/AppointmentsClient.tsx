@@ -135,6 +135,8 @@ export default function AppointmentsClient({
           const data = await appointmentsResponse.json();
           setAppointments(data.appointments);
           setCurrentTeamName(data.teamName);
+          setTeamTimezone(data.teamTimezone || null);
+          setTeamHospitalAddress(data.teamHospitalAddress || null);
         }
 
         setCancelConfirmationId(null);
@@ -160,8 +162,8 @@ export default function AppointmentsClient({
     <div ref={pageRef} className="space-y-6">
       {/* Header */}
       <div className={`${cancelledTint} rounded-xl shadow-sm border p-6 transition-colors`}>
-        <div className="flex justify-between items-center">
-          <div>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
               {view === "upcoming" ? "Upcoming Appointments" : "Cancelled Appointments"}
             </h1>
@@ -202,11 +204,12 @@ export default function AppointmentsClient({
           </div>
           <Link 
             href="/submit" 
-            className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-white dark:focus:ring-offset-gray-800"
+            className="inline-flex w-full md:w-auto items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-white dark:focus:ring-offset-gray-800"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
             </svg>
+            <span className="font-medium">Schedule New Appointment</span>
           </Link>
         </div>
         <div className="mt-4 flex gap-2">

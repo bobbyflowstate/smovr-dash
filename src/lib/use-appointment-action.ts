@@ -4,11 +4,13 @@ import { useEffect, useState, useRef } from "react";
 import { AUDIT_LOG_ACTIONS, type AuditLogAction } from "@/lib/audit-log-actions";
 
 export type AppointmentStatus = "loading" | "success" | "error" | "not-found" | "passed";
+export type AppointmentLanguageMode = "en" | "en_es";
 
 export function useAppointmentAction(appointmentId: string | undefined, action: AuditLogAction) {
   const [status, setStatus] = useState<AppointmentStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [contactPhone, setContactPhone] = useState<string | undefined>(undefined);
+  const [languageMode, setLanguageMode] = useState<AppointmentLanguageMode>("en_es");
   const hasLogged = useRef(false);
 
   useEffect(() => {
@@ -33,6 +35,9 @@ export function useAppointmentAction(appointmentId: string | undefined, action: 
         const responseData: any = await response.json().catch(() => ({}));
         if (responseData?.contactPhone) {
           setContactPhone(responseData.contactPhone);
+        }
+        if (responseData?.languageMode === "en" || responseData?.languageMode === "en_es") {
+          setLanguageMode(responseData.languageMode);
         }
 
         if (response.status === 404) {
@@ -62,8 +67,7 @@ export function useAppointmentAction(appointmentId: string | undefined, action: 
     checkAndLogAction();
   }, [appointmentId, action]);
 
-  return { status, errorMessage, contactPhone };
+  return { status, errorMessage, contactPhone, languageMode };
 }
-
 
 

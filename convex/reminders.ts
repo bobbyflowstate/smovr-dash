@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type SMSWebhookResult } from "./webhook_utils";
+import { sendSMSWebhookDetailed, formatReminder24hMessage, formatReminder1hMessage, type LanguageMode, type SMSWebhookResult } from "./webhook_utils";
 import type { TeamSmsConfig } from "./sms_factory";
 import {
   REMINDER_WINDOWS_HOURS,
@@ -49,6 +49,7 @@ async function sendReminder24hWebhook(
   appointmentDate: Date,
   timezone: string,
   hospitalAddress: string,
+  languageMode: LanguageMode,
   teamSmsConfig?: TeamSmsConfig | null,
 ): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder24hWebhook", { appointmentId, patientPhone });
@@ -72,7 +73,8 @@ async function sendReminder24hWebhook(
       appointmentId,
       BASE_URL,
       timezone,
-      hospitalAddress
+      hospitalAddress,
+      languageMode,
     );
     
     // Send SMS via pluggable provider (team config → env fallback)
@@ -101,6 +103,7 @@ async function sendReminder1hWebhook(
   appointmentDate: Date,
   timezone: string,
   hospitalAddress: string,
+  languageMode: LanguageMode,
   teamSmsConfig?: TeamSmsConfig | null,
 ): Promise<ReminderWebhookResult> {
   const log = createActionLogger("reminders.sendReminder1hWebhook", { appointmentId, patientPhone });
@@ -124,7 +127,8 @@ async function sendReminder1hWebhook(
       appointmentId,
       BASE_URL,
       timezone,
-      hospitalAddress
+      hospitalAddress,
+      languageMode,
     );
     
     // Send SMS via pluggable provider (team config → env fallback)
@@ -335,6 +339,7 @@ export const checkAndSendReminders = internalAction({
         }
         const timezone: string = team.timezone;
         const hospitalAddress: string = team.hospitalAddress;
+        const languageMode: LanguageMode = (team.languageMode as LanguageMode) ?? "en_es";
 
         // Load team SMS config for provider selection
         if (!smsConfigCache.has(teamIdStr)) {
@@ -484,6 +489,7 @@ export const checkAndSendReminders = internalAction({
                   appointmentDate,
                   timezone,
                   hospitalAddress,
+                  languageMode,
                   teamSmsConfig,
                 );
 
@@ -680,6 +686,7 @@ export const checkAndSendReminders = internalAction({
                   appointmentDate,
                   timezone,
                   hospitalAddress,
+                  languageMode,
                   teamSmsConfig,
                 );
 
@@ -876,6 +883,7 @@ export const testCheckReminders = internalAction({
           }
           const timezone: string = team.timezone;
           const hospitalAddress: string = team.hospitalAddress;
+          const languageMode: LanguageMode = (team.languageMode as LanguageMode) ?? "en_es";
 
           // Load team SMS config for provider selection
           if (!smsConfigCache2.has(teamIdStr)) {
@@ -942,6 +950,7 @@ export const testCheckReminders = internalAction({
                   appointmentDate,
                   timezone,
                   hospitalAddress,
+                  languageMode,
                   teamSmsConfig,
                 );
 
@@ -1027,6 +1036,7 @@ export const testCheckReminders = internalAction({
                   appointmentDate,
                   timezone,
                   hospitalAddress,
+                  languageMode,
                   teamSmsConfig,
                 );
 

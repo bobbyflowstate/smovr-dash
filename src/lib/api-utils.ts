@@ -1,6 +1,10 @@
+import { NextRequest, NextResponse } from "next/server";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "../../convex/_generated/api";
+import { getSMSProviderForTeam, getDefaultSMSProvider, type SMSProvider } from "@/lib/sms";
+import type { AdminConvexClient } from "@/lib/convex-server";
+import type { Id } from "../../convex/_generated/dataModel";
 
 /**
  * Sanitise error messages before returning them to API clients.
@@ -20,6 +24,70 @@ export function safeErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+/** True when an error payload indicates request throttling/rate limiting. */
+export function isRateLimitError(error: unknown): boolean {
+  if (error instanceof Error && /too many requests/i.test(error.message)) {
+    return true;
+  }
+
+  try {
+    const serialized =
+      typeof error === "string" ? error : JSON.stringify(error);
+    return /too many requests/i.test(serialized);
+  } catch {
+    return false;
+  }
+}
+
+/** Strip all non-digit characters from a phone string. */
+export function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
+const IP_WINDOW_MS = 60_000; // 1 minute
+const IP_MAX_REQUESTS = 10;
+const ipHits = new Map<string, number[]>();
+
+function isIpRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const hits = (ipHits.get(ip) ?? []).filter((t) => now - t < IP_WINDOW_MS);
+  hits.push(now);
+  ipHits.set(ip, hits);
+  return hits.length > IP_MAX_REQUESTS;
+}
+
+/** Extract client IP from request headers. */
+export function getClientIp(request: NextRequest): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+}
+
+/**
+ * Apply in-memory IP rate limiting and return 429 response if blocked.
+ */
+export function applyIpRateLimit(ip: string): NextResponse | null {
+  if (isIpRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429 },
+    );
+  }
+  return null;
+}
+
+/** Honeypot marker for public forms. */
+export function isHoneypotTriggered(body: Record<string, unknown>): boolean {
+  return Boolean(body._hp);
+}
+
+/** Resolve team SMS provider with fallback to default provider. */
+export async function resolveSMSProvider(
+  convex: AdminConvexClient,
+  teamId: Id<"teams">,
+): Promise<SMSProvider> {
+  const provider = await getSMSProviderForTeam(convex, teamId);
+  return provider ?? getDefaultSMSProvider();
 }
 
 export type AuthenticatedUser = {

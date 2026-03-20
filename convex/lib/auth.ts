@@ -1,5 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 type AuthCtx = QueryCtx | MutationCtx;
 
@@ -10,15 +11,23 @@ type AuthCtx = QueryCtx | MutationCtx;
 export async function getAuthenticatedUser(
   ctx: AuthCtx
 ): Promise<Doc<"users"> & { teamId: Id<"teams"> }> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.email) {
-    throw new Error("Not authenticated");
+  const authUserId = await getAuthUserId(ctx);
+  let user: Doc<"users"> | null = null;
+
+  if (authUserId) {
+    user = await ctx.db.get(authUserId);
   }
 
-  const user = await ctx.db
-    .query("users")
-    .withIndex("email", (q) => q.eq("email", identity.email!))
-    .unique();
+  if (!user) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.email) {
+      throw new Error("Not authenticated");
+    }
+    user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", identity.email!))
+      .unique();
+  }
 
   if (!user) {
     throw new Error("User not found");
@@ -37,15 +46,23 @@ export async function getAuthenticatedUser(
 export async function tryGetAuthenticatedUser(
   ctx: AuthCtx
 ): Promise<(Doc<"users"> & { teamId: Id<"teams"> }) | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.email) {
-    return null;
+  const authUserId = await getAuthUserId(ctx);
+  let user: Doc<"users"> | null = null;
+
+  if (authUserId) {
+    user = await ctx.db.get(authUserId);
   }
 
-  const user = await ctx.db
-    .query("users")
-    .withIndex("email", (q) => q.eq("email", identity.email!))
-    .unique();
+  if (!user) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.email) {
+      return null;
+    }
+    user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", identity.email!))
+      .unique();
+  }
 
   if (!user || !user.teamId) {
     return null;
