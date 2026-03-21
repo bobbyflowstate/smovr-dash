@@ -124,6 +124,52 @@ describe("Public booking/entry routes", () => {
     expect(mockConvex.mutation).not.toHaveBeenCalled();
   });
 
+  it("POST /api/book returns 404 for archived team", async () => {
+    mockConvex.query.mockResolvedValue({
+      _id: "team_archived",
+      languageMode: "en",
+      entrySlug: "clinic-archived",
+      isArchived: true,
+    });
+
+    const { POST } = await import("../src/app/api/book/route");
+    const req = new NextRequest("http://localhost:3000/api/book", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamSlug: "clinic-archived",
+        patientPhone: "5551112222",
+      }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(404);
+    expect(mockConvex.mutation).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/book returns 404 when booking page feature is disabled", async () => {
+    mockConvex.query.mockResolvedValue({
+      _id: "team_disabled",
+      languageMode: "en",
+      entrySlug: "clinic-disabled",
+      features: { booking_page_enabled: false },
+    });
+
+    const { POST } = await import("../src/app/api/book/route");
+    const req = new NextRequest("http://localhost:3000/api/book", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamSlug: "clinic-disabled",
+        patientPhone: "5551112222",
+      }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(404);
+    expect(mockConvex.mutation).not.toHaveBeenCalled();
+  });
+
   it("POST /api/book rejects legacy teamId payload when compatibility flag is off", async () => {
     const { POST } = await import("../src/app/api/book/route");
     const req = new NextRequest("http://localhost:3000/api/book", {
@@ -194,6 +240,52 @@ describe("Public booking/entry routes", () => {
     expect(createPublicCall[1]).toEqual(
       expect.objectContaining({ teamId: "legacy_team", source: "website_button" }),
     );
+  });
+
+  it("POST /api/entry returns 404 for archived team", async () => {
+    mockConvex.query.mockResolvedValue({
+      _id: "team_archived",
+      languageMode: "en_es",
+      entrySlug: "clinic-archived",
+      isArchived: true,
+    });
+
+    const { POST } = await import("../src/app/api/entry/route");
+    const req = new NextRequest("http://localhost:3000/api/entry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamSlug: "clinic-archived",
+        patientPhone: "5553334444",
+      }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(404);
+    expect(mockConvex.mutation).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/entry returns 404 when website entry feature is disabled", async () => {
+    mockConvex.query.mockResolvedValue({
+      _id: "team_disabled",
+      languageMode: "en_es",
+      entrySlug: "clinic-disabled",
+      features: { website_entry_enabled: false },
+    });
+
+    const { POST } = await import("../src/app/api/entry/route");
+    const req = new NextRequest("http://localhost:3000/api/entry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamSlug: "clinic-disabled",
+        patientPhone: "5553334444",
+      }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(404);
+    expect(mockConvex.mutation).not.toHaveBeenCalled();
   });
 
   it("POST /api/entry maps Convex rate-limit errors to HTTP 429", async () => {

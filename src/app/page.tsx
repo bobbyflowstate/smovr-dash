@@ -4,7 +4,7 @@ import { fetchQuery, fetchMutation } from "convex/nextjs";
 import { api } from "../../convex/_generated/api";
 import { globalLogger } from "@/lib/observability";
 
-const OFFICE_NAME = process.env.NEXT_PUBLIC_OFFICE_NAME || "Medical Office";
+const APP_NAME = process.env.NEXT_PUBLIC_OFFICE_NAME || "Dashboard";
 
 export default async function Home() {
   const isAuthenticated = await isAuthenticatedNextjs();
@@ -13,14 +13,14 @@ export default async function Home() {
   let userName = "User";
   let teamName: string | null = null;
 
+  let needsTeamAssignment = false;
+
   if (isAuthenticated) {
     try {
       const token = await convexAuthNextjsToken();
       if (token) {
-        // Ensure team exists for the authenticated user
         await fetchMutation(api.users.ensureTeam, {}, { token });
 
-        // Get user with team info
         const userInfo = await fetchQuery(api.users.currentUser, {}, { token });
 
         if (userInfo) {
@@ -29,14 +29,34 @@ export default async function Home() {
         }
       }
     } catch (error) {
-      globalLogger.error("Home: Error fetching user info", error);
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("TEAM_ASSIGNMENT_REQUIRED")) {
+        needsTeamAssignment = true;
+      } else {
+        globalLogger.error("Home: Error fetching user info", error);
+      }
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      {isAuthenticated ? (
-        // Authenticated user sees the dashboard
+      {isAuthenticated && needsTeamAssignment ? (
+        <div className="flex items-center justify-center min-h-screen px-4">
+          <div className="max-w-md w-full p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-center">
+            <div className="mx-auto w-16 h-16 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center mb-6">
+              <svg className="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Team Assignment Required
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              Your account has not been assigned to a clinic team yet. Please contact your administrator to be assigned to a team.
+            </p>
+          </div>
+        </div>
+      ) : isAuthenticated ? (
         <div className="container mx-auto px-4 py-8">
           {/* Welcome Section */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 mb-8 transition-colors">
@@ -137,23 +157,6 @@ export default async function Home() {
               </p>
             </Link>
 
-            <Link
-              href="/settings"
-              className="group bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 hover:-translate-y-1"
-            >
-              <div className="flex items-center justify-center w-12 h-12 bg-indigo-100 dark:bg-indigo-900 rounded-lg mb-4 group-hover:bg-indigo-200 dark:group-hover:bg-indigo-800 transition-colors">
-                <svg className="w-6 h-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.592 1.01c1.527-.94 3.295.826 2.356 2.353a1.724 1.724 0 001.01 2.592c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.01 2.592c.94 1.527-.826 3.295-2.353 2.356a1.724 1.724 0 00-2.592 1.01c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.592-1.01c-1.527.94-3.295-.826-2.356-2.353a1.724 1.724 0 00-1.01-2.592c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.01-2.592c-.94-1.527.826-3.295 2.353-2.356.996.614 2.296.07 2.592-1.01z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Settings
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-sm">
-                Update team profile and messaging settings
-              </p>
-            </Link>
           </div>
         </div>
       ) : (
@@ -167,7 +170,7 @@ export default async function Home() {
                 </svg>
               </div>
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-                {`Welcome to ${OFFICE_NAME}`}
+                {`Welcome to ${APP_NAME}`}
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
                 Secure healthcare data management platform

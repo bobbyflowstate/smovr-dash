@@ -160,17 +160,6 @@ export default function ClientHeader({ teamId, teamName }: ClientHeaderProps) {
           </ul>
         </nav>
         <div className="flex items-center gap-2">
-          <Link
-            href="/settings"
-            className="inline-flex items-center justify-center p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Settings"
-            aria-label="Settings"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.592 1.01c1.527-.94 3.295.826 2.356 2.353a1.724 1.724 0 001.01 2.592c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.01 2.592c.94 1.527-.826 3.295-2.353 2.356a1.724 1.724 0 00-2.592 1.01c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.592-1.01c-1.527.94-3.295-.826-2.356-2.353a1.724 1.724 0 00-1.01-2.592c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.01-2.592c-.94-1.527.826-3.295 2.353-2.356.996.614 2.296.07 2.592-1.01z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </Link>
           <div className="hidden md:block">
             <ThemeToggle />
           </div>

@@ -16,6 +16,7 @@ export default defineSchema({
     // App-specific fields
     teamId: v.optional(v.id("teams")),
     tokenIdentifier: v.optional(v.string()),
+    clinicRole: v.optional(v.union(v.literal("operator"), v.literal("manager"))),
   })
     .index("email", ["email"])
     .index("by_token", ["tokenIdentifier"]),
@@ -28,6 +29,10 @@ export default defineSchema({
     languageMode: v.optional(v.union(v.literal("en"), v.literal("en_es"))), // default "en_es"
     rescheduleUrl: v.optional(v.string()), // overrides default /book/[slug] scheduling link
     entrySlug: v.optional(v.string()), // unique slug for /chat/[slug] website button URL
+    features: v.optional(v.record(v.string(), v.boolean())),
+    isArchived: v.optional(v.boolean()),
+    archivedAt: v.optional(v.string()),
+    archivedBy: v.optional(v.string()),
   }),
 
   patients: defineTable({
@@ -242,4 +247,11 @@ export default defineSchema({
     inboundWebhookSecret: v.optional(v.string()),
   })
     .index("by_team", ["teamId"]),
+
+  opsAdmins: defineTable({
+    email: v.string(),
+    passwordHash: v.string(),
+    createdAt: v.string(),
+  })
+    .index("by_email", ["email"]),
 });

@@ -5,31 +5,19 @@ import { createMutationLogger, createQueryLogger } from "./lib/logger";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
-async function getOldestTeamId(ctx: MutationCtx): Promise<Id<"teams"> | null> {
+async function getActiveTeams(ctx: MutationCtx) {
   const teams = await ctx.db.query("teams").collect();
-  if (teams.length === 0) return null;
-  teams.sort((a, b) => a._creationTime - b._creationTime);
-  return teams[0]._id;
-}
-
-async function getOrCreatePrimaryTeamId(
-  ctx: MutationCtx,
-  fallbackName: string
-): Promise<Id<"teams">> {
-  const existingTeamId = await getOldestTeamId(ctx);
-  if (existingTeamId) return existingTeamId;
-
-  return await ctx.db.insert("teams", {
-    name: process.env.DEFAULT_TEAM_NAME || fallbackName,
-    contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
-  });
+  return teams
+    .filter((t) => !t.isArchived)
+    .sort((a, b) => a._creationTime - b._creationTime);
 }
 
 /**
  * Ensure the authenticated user has a team assigned.
- * If the user exists but has no team, assigns the oldest existing team.
- * If no teams exist, creates one and assigns it.
- * Called post-login from the frontend.
+ *
+ * Single-team deployment (backward-compatible): auto-assigns the only team.
+ * Multi-team deployment: requires ops admin to assign the user first.
+ * If no teams exist, creates a default one and assigns it.
  */
 export const ensureTeam = mutation({
   args: {},
@@ -50,19 +38,36 @@ export const ensureTeam = mutation({
     }
 
     if (user.teamId) {
+      const team = await ctx.db.get(user.teamId);
+      if (team && team.isArchived) {
+        log.error("User's team is archived", { teamId: user.teamId });
+        throw new Error("TEAM_ARCHIVED");
+      }
       log.debug("User already has a team", { teamId: user.teamId });
       return user._id;
     }
 
-    const teamId = await getOrCreatePrimaryTeamId(
-      ctx,
-      `${user.name || user.email || "User"}'s Team`
-    );
+    const activeTeams = await getActiveTeams(ctx);
 
-    await ctx.db.patch(user._id, { teamId });
+    if (activeTeams.length === 0) {
+      const teamId = await ctx.db.insert("teams", {
+        name: process.env.DEFAULT_TEAM_NAME || `${user.name || user.email || "User"}'s Team`,
+        contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
+      });
+      await ctx.db.patch(user._id, { teamId, clinicRole: "manager" });
+      log.info("Created default team and assigned user", { userId: user._id, teamId });
+      return user._id;
+    }
 
-    log.info("Assigned team to user", { userId: user._id, teamId });
-    return user._id;
+    if (activeTeams.length === 1) {
+      const teamId = activeTeams[0]._id;
+      await ctx.db.patch(user._id, { teamId, clinicRole: "operator" });
+      log.info("Auto-assigned user to sole team", { userId: user._id, teamId });
+      return user._id;
+    }
+
+    log.info("Multiple teams exist; assignment required via /ops", { userId: user._id });
+    throw new Error("TEAM_ASSIGNMENT_REQUIRED");
   },
 });
 
@@ -157,24 +162,39 @@ export const getOrCreateUserByEmail = mutation({
 
     if (existingUser) {
       if (!existingUser.teamId) {
-        const teamId = await getOrCreatePrimaryTeamId(ctx, `${args.name}'s Team`);
-        await ctx.db.patch(existingUser._id, { teamId });
+        const activeTeams = await getActiveTeams(ctx);
+        if (activeTeams.length === 1) {
+          await ctx.db.patch(existingUser._id, {
+            teamId: activeTeams[0]._id,
+            clinicRole: "operator",
+          });
+        }
       }
       log.debug("Found existing user", { userId: existingUser._id });
       return existingUser._id;
     }
 
     log.info("Creating new user");
-    const teamId = await getOrCreatePrimaryTeamId(ctx, `${args.name}'s Team`);
+    const activeTeams = await getActiveTeams(ctx);
+    let teamId: Id<"teams"> | undefined;
+    if (activeTeams.length === 1) {
+      teamId = activeTeams[0]._id;
+    } else if (activeTeams.length === 0) {
+      teamId = await ctx.db.insert("teams", {
+        name: process.env.DEFAULT_TEAM_NAME || `${args.name}'s Team`,
+        contactPhone: process.env.DEFAULT_TEAM_CONTACT_PHONE,
+      });
+    }
 
     const newUserId = await ctx.db.insert("users", {
       name: args.name,
       email: args.email,
       tokenIdentifier: args.logtoUserId,
       teamId,
+      clinicRole: teamId ? "operator" : undefined,
     });
 
-    log.info("Created new user and team", { userId: newUserId, teamId });
+    log.info("Created new user", { userId: newUserId, teamId });
     return newUserId;
   },
 });

@@ -10,6 +10,7 @@ interface TeamInfo {
   entrySlug?: string;
   languageMode: string;
   contactPhone?: string;
+  features?: Record<string, boolean>;
 }
 
 export default function BookingPage() {
@@ -36,6 +37,10 @@ export default function BookingPage() {
         }
         const data = await res.json();
         if (!data || !data.entrySlug) {
+          setState("not-found");
+          return;
+        }
+        if (data.features?.booking_page_enabled === false) {
           setState("not-found");
           return;
         }

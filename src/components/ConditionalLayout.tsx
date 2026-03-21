@@ -12,17 +12,19 @@ export default async function ConditionalLayout({
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") || "";
   
-  // Check if we're on a patient landing page
   const isPatientLandingPage = PATIENT_LANDING_ROUTES.some((route) =>
     pathname.startsWith(route)
   );
 
-  // For patient landing pages, don't show header/footer
   if (isPatientLandingPage) {
     return <>{children}</>;
   }
 
-  // For admin pages, show header and footer
+  // /ops has its own layout
+  if (pathname.startsWith("/ops")) {
+    return <>{children}</>;
+  }
+
   return (
     <>
       <Header />

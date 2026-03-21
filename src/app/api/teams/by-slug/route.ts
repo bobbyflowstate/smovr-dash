@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const convex = createAdminConvexClient();
     const team = await convex.query(api.teams.getByEntrySlug, { slug });
 
-    if (!team) {
+    if (!team || team.isArchived) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
       entrySlug: team.entrySlug,
       languageMode: team.languageMode ?? "en_es",
       contactPhone: team.contactPhone,
+      features: team.features,
     });
   } catch (error) {
     console.error("Failed to look up team by slug:", error);

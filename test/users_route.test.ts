@@ -16,9 +16,11 @@ vi.mock("@/lib/api-utils", () => ({
 }));
 
 const mockFetchMutation = vi.fn();
+const mockFetchQuery = vi.fn();
 
 vi.mock("convex/nextjs", () => ({
   fetchMutation: (...args: unknown[]) => mockFetchMutation(...args),
+  fetchQuery: (...args: unknown[]) => mockFetchQuery(...args),
 }));
 
 vi.mock("@/lib/observability", () => ({
@@ -35,6 +37,9 @@ vi.mock("@/lib/observability", () => ({
 
 const AUTH_USER = {
   token: "tok_test",
+};
+
+const CURRENT_USER = {
   userId: "u1",
   userEmail: "doc@clinic.com",
   teamId: "t1",
@@ -47,6 +52,7 @@ describe("GET /api/users", () => {
     vi.clearAllMocks();
     mockGetAuthenticatedUser.mockResolvedValue(AUTH_USER);
     mockFetchMutation.mockResolvedValue(undefined);
+    mockFetchQuery.mockResolvedValue(CURRENT_USER);
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -59,7 +65,7 @@ describe("GET /api/users", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns user info from getAuthenticatedUser", async () => {
+  it("returns user info from currentUser query", async () => {
     const { GET } = await import("../src/app/api/users/route");
     const req = new NextRequest("http://localhost:3000/api/users");
     const res = await GET(req);
@@ -98,8 +104,8 @@ describe("GET /api/users", () => {
   });
 
   it("falls back teamName to 'Unknown Team' when empty", async () => {
-    mockGetAuthenticatedUser.mockResolvedValue({
-      ...AUTH_USER,
+    mockFetchQuery.mockResolvedValue({
+      ...CURRENT_USER,
       teamName: "",
     });
 
