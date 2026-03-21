@@ -10,6 +10,7 @@ interface TeamInfo {
   entrySlug?: string;
   languageMode: string;
   contactPhone?: string;
+  features?: Record<string, boolean>;
 }
 
 export default function ChatPage() {
@@ -35,6 +36,10 @@ export default function ChatPage() {
         }
         const data = await res.json();
         if (!data || !data.entrySlug) {
+          setState("not-found");
+          return;
+        }
+        if (data.features?.website_entry_enabled === false) {
           setState("not-found");
           return;
         }

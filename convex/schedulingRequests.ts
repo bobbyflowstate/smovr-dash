@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthenticatedUser } from "./lib/auth";
 import { createMutationLogger, createQueryLogger } from "./lib/logger";
+import { isFeatureEnabled } from "./lib/featureFlags";
 
 const MAX_REQUESTS_PER_PHONE = 3;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -33,6 +34,24 @@ export const createPublic = mutation({
     if (!team) {
       log.error("Team not found");
       throw new Error("Team not found");
+    }
+    if (team.isArchived) {
+      log.warn("Rejected request for archived team");
+      throw new Error("Team not found");
+    }
+    if (
+      args.source === "booking_page" &&
+      !isFeatureEnabled(team.features, "booking_page_enabled")
+    ) {
+      log.warn("Booking page disabled for team");
+      throw new Error("Booking page is disabled for this team");
+    }
+    if (
+      args.source === "website_button" &&
+      !isFeatureEnabled(team.features, "website_entry_enabled")
+    ) {
+      log.warn("Website entry disabled for team");
+      throw new Error("Website entry is disabled for this team");
     }
 
     const normalizedPhone = args.patientPhone.replace(/\D/g, "");

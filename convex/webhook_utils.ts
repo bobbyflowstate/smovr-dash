@@ -38,7 +38,7 @@ export interface MessageLocale {
   reminder24hToday(name: string | null): string;
   reminder24hUpcoming(name: string | null): string;
   reminder1h(name: string | null): string;
-  birthdayGreeting(name: string | null): string;
+  birthdayGreeting(name: string | null, teamName?: string): string;
   returnDateReminder(name: string | null): string;
   referralFollowUp(name: string | null): string;
   reactivation(name: string | null): string;
@@ -62,7 +62,7 @@ export const LOCALES: Record<string, MessageLocale> = {
     reminder24hToday: (n) => n ? `Hi ${n}, just a reminder that your appointment is today.` : "Just a reminder that your appointment is today.",
     reminder24hUpcoming: (n) => n ? `Hi ${n}, just a reminder about your upcoming appointment.` : "Just a reminder about your upcoming appointment.",
     reminder1h: (n) => n ? `Hi ${n}, just a reminder that your appointment is in about 1 hour.` : "Just a reminder that your appointment is in about 1 hour.",
-    birthdayGreeting: (n) => n ? `Hello ${n}, happy birthday from everyone at our office! We wish you a great day.` : "Happy birthday from everyone at our office! We wish you a great day.",
+    birthdayGreeting: (n, teamName) => n ? `Hello ${n}, happy birthday from everyone at ${teamName || "our office"}! We wish you a great day.` : `Happy birthday from everyone at ${teamName || "our office"}! We wish you a great day.`,
     returnDateReminder: (n) => n ? `Hello ${n}, it may be time to schedule your next visit. Please click the link to book an appointment:` : "It may be time to schedule your next visit. Please click the link to book an appointment:",
     referralFollowUp: (n) => n ? `Hi ${n}, just checking in about the appointment we discussed. Please click the link below to let us know your status:` : "Just checking in about the appointment we discussed. Please click the link below to let us know your status:",
     reactivation: (n) => n ? `Hi ${n}, we have not seen you in a while and just wanted to check in. If you would like to schedule a visit, you can do that here:` : "We have not seen you in a while and just wanted to check in. If you would like to schedule a visit, you can do that here:",
@@ -84,7 +84,7 @@ export const LOCALES: Record<string, MessageLocale> = {
     reminder24hToday: (n) => n ? `Hola ${n}, un recordatorio de que su cita es hoy.` : "Un recordatorio de que su cita es hoy.",
     reminder24hUpcoming: (n) => n ? `Hola ${n}, un recordatorio sobre su próxima cita.` : "Un recordatorio sobre su próxima cita.",
     reminder1h: (n) => n ? `Hola ${n}, un recordatorio rápido de que su cita es en aproximadamente 1 hora.` : "Un recordatorio rápido de que su cita es en aproximadamente 1 hora.",
-    birthdayGreeting: (n) => n ? `Hola ${n}, feliz cumpleaños de parte de todos en nuestra oficina. Le deseamos un gran día.` : "Feliz cumpleaños de parte de todos en nuestra oficina. Le deseamos un gran día.",
+    birthdayGreeting: (n, teamName) => n ? `Hola ${n}, feliz cumpleaños de parte de todos en ${teamName || "nuestra oficina"}. Le deseamos un gran día.` : `Feliz cumpleaños de parte de todos en ${teamName || "nuestra oficina"}. Le deseamos un gran día.`,
     returnDateReminder: (n) => n ? `Hola ${n}, puede ser momento de programar su próxima visita. Por favor haga clic en el enlace para reservar una cita:` : "Puede ser momento de programar su próxima visita. Por favor haga clic en el enlace para reservar una cita:",
     referralFollowUp: (n) => n ? `Hola ${n}, solo queríamos verificar sobre la cita que comentamos. Por favor haga clic en el enlace para indicarnos su estado:` : "Solo queríamos verificar sobre la cita que comentamos. Por favor haga clic en el enlace para indicarnos su estado:",
     reactivation: (n) => n ? `Hola ${n}, hace tiempo que no lo vemos y queríamos saludar. Si desea programar una visita puede hacerlo aquí:` : "Hace tiempo que no lo vemos y queríamos saludar. Si desea programar una visita puede hacerlo aquí:",
@@ -122,7 +122,7 @@ export interface ResolvedMessages {
   reminder24hToday: (name: string | null) => string;
   reminder24hUpcoming: (name: string | null) => string;
   reminder1h: (name: string | null) => string;
-  birthdayGreeting: (name: string | null) => string;
+  birthdayGreeting: (name: string | null, teamName?: string) => string;
   returnDateReminder: (name: string | null) => string;
   referralFollowUp: (name: string | null) => string;
   reactivation: (name: string | null) => string;
@@ -170,7 +170,8 @@ export function resolveMessages(mode: LanguageMode): ResolvedMessages {
     reminder24hToday: joinGreeting("reminder24hToday"),
     reminder24hUpcoming: joinGreeting("reminder24hUpcoming"),
     reminder1h: joinGreeting("reminder1h"),
-    birthdayGreeting: joinGreeting("birthdayGreeting"),
+    birthdayGreeting: (name: string | null, teamName?: string) =>
+      locales.map((l) => l.birthdayGreeting(name, teamName)).join("\n"),
     returnDateReminder: joinGreeting("returnDateReminder"),
     referralFollowUp: joinGreeting("referralFollowUp"),
     reactivation: joinGreeting("reactivation"),
@@ -498,9 +499,10 @@ export function formatReminder1hMessage(
 export function formatBirthdayMessage(
   patientName: string | null,
   languageMode: LanguageMode = "en_es",
+  teamName?: string,
 ): string {
   const m = resolveMessages(languageMode);
-  return m.birthdayGreeting(patientName);
+  return m.birthdayGreeting(patientName, teamName);
 }
 
 export function formatReturnDateMessage(

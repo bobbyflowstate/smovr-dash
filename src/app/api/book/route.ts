@@ -13,6 +13,7 @@ import {
 } from "@/lib/api-utils";
 import { formatBookingConfirmationMessage, type LanguageMode } from "../../../../convex/webhook_utils";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { isFeatureEnabled } from "../../../../convex/lib/featureFlags";
 
 /**
  * POST /api/book — Public endpoint for the /book/[slug] form.
@@ -81,6 +82,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (!team) {
+        return NextResponse.json({ error: "Team not found" }, { status: 404 });
+      }
+      if (team.isArchived) {
+        return NextResponse.json({ error: "Team not found" }, { status: 404 });
+      }
+      if (!isFeatureEnabled(team.features, "booking_page_enabled")) {
         return NextResponse.json({ error: "Team not found" }, { status: 404 });
       }
       const teamId = team._id;

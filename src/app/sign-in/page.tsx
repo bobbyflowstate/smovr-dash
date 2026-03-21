@@ -3,7 +3,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
 
-const OFFICE_NAME = process.env.NEXT_PUBLIC_OFFICE_NAME || "Medical Office";
+const APP_NAME = process.env.NEXT_PUBLIC_OFFICE_NAME || "Dashboard";
 
 export default function SignInPage() {
   const { signIn } = useAuthActions();
@@ -45,7 +45,7 @@ export default function SignInPage() {
               </svg>
             </div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-              {`Welcome to ${OFFICE_NAME}`}
+              {`Welcome to ${APP_NAME}`}
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Secure healthcare data management platform

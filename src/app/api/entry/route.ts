@@ -13,6 +13,7 @@ import {
 } from "@/lib/api-utils";
 import { formatWebsiteEntryMessage, type LanguageMode } from "../../../../convex/webhook_utils";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { isFeatureEnabled } from "../../../../convex/lib/featureFlags";
 
 /**
  * POST /api/entry — Public endpoint for the /chat/[slug] website button form.
@@ -80,6 +81,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (!team) {
+        return NextResponse.json({ error: "Team not found" }, { status: 404 });
+      }
+      if (team.isArchived) {
+        return NextResponse.json({ error: "Team not found" }, { status: 404 });
+      }
+      if (!isFeatureEnabled(team.features, "website_entry_enabled")) {
         return NextResponse.json({ error: "Team not found" }, { status: 404 });
       }
       const teamId = team._id;

@@ -9,6 +9,8 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id, Doc } from "./_generated/dataModel";
+import { isFeatureEnabled } from "./lib/featureFlags";
+import { getCanonicalAppUrl } from "./lib/appUrl";
 import {
   sendSMSWebhookDetailed,
   formatBirthdayMessage,
@@ -144,10 +146,15 @@ export const checkAndSendBirthdayReminders = internalAction({
     let totalSkipped = 0;
 
     for (const team of teams) {
+      if (team.isArchived) continue;
+      if (!isFeatureEnabled(team.features, "birthday_reminders_enabled")) {
+        log.debug("Birthday reminders disabled for team", { teamId: team._id });
+        continue;
+      }
+
       const timezone = team.timezone || "America/Los_Angeles";
       const languageMode: LanguageMode = (team.languageMode as LanguageMode) ?? "en_es";
 
-      // Resolve "today" in the team's timezone
       const nowInTz = new Date().toLocaleString("en-CA", { timeZone: timezone });
       const [datePart] = nowInTz.split(",");
       const [, month, day] = datePart.trim().split("-"); // en-CA gives YYYY-MM-DD
@@ -199,7 +206,7 @@ export const checkAndSendBirthdayReminders = internalAction({
           continue;
         }
 
-        const message = formatBirthdayMessage(patient.name || null, languageMode);
+        const message = formatBirthdayMessage(patient.name || null, languageMode, team.name);
         const result = await sendSMSWebhookDetailed(patient.phone, message, teamSmsConfig);
 
         if (result.ok) {
@@ -328,16 +335,17 @@ export const checkAndSendReturnDateReminders = internalAction({
     log.info("Starting return-date reminder check");
 
     const teams: Doc<"teams">[] = await ctx.runQuery(internal.proReminders.getAllTeams, {});
-    const baseUrl = process.env.NEXT_PUBLIC_URL || "https://app.smovr.com";
+    const baseUrl = process.env.NEXT_PUBLIC_URL || getCanonicalAppUrl() || "";
 
     let totalSent = 0;
     let totalSkipped = 0;
 
     for (const team of teams) {
+      if (team.isArchived) continue;
+
       const timezone = team.timezone || "America/Los_Angeles";
       const languageMode: LanguageMode = (team.languageMode as LanguageMode) ?? "en_es";
 
-      // Resolve "today" in the team's timezone (YYYY-MM-DD)
       const nowInTz = new Date().toLocaleString("en-CA", { timeZone: timezone });
       const [datePart] = nowInTz.split(",");
       const todayISO = datePart.trim();
@@ -511,6 +519,11 @@ export const sendReferralFollowUp = internalAction({
     }
 
     const team = await ctx.runQuery(internal.proReminders.getTeamById, { teamId: referral.teamId });
+    if (team && !isFeatureEnabled(team.features, "referrals_enabled")) {
+      log.debug("Referrals disabled for team", { teamId: referral.teamId });
+      return;
+    }
+
     const patient = await ctx.runQuery(internal.proReminders.getPatientById, { patientId: referral.patientId });
     if (!patient) {
       log.error("Patient not found for referral", { referralId: referral._id });
@@ -518,7 +531,7 @@ export const sendReferralFollowUp = internalAction({
     }
 
     const languageMode: LanguageMode = (team?.languageMode as LanguageMode) ?? "en_es";
-    const baseUrl = process.env.NEXT_PUBLIC_URL || "https://app.smovr.com";
+    const baseUrl = process.env.NEXT_PUBLIC_URL || getCanonicalAppUrl() || "";
     const statusLink = `${baseUrl}/referral-status/${referral.token}`;
 
     const message = formatReferralFollowUpMessage(patient.name || null, statusLink, languageMode);
@@ -651,9 +664,13 @@ export const sendReactivationMessages = internalAction({
       log.error("Team not found", { teamId: args.teamId });
       return { sent: 0, failed: 0 };
     }
+    if (!isFeatureEnabled(team.features, "reactivation_enabled")) {
+      log.info("Reactivation disabled for team", { teamId: args.teamId });
+      return { sent: 0, failed: 0 };
+    }
 
     const languageMode: LanguageMode = (team.languageMode as LanguageMode) ?? "en_es";
-    const baseUrl = process.env.NEXT_PUBLIC_URL || "https://app.smovr.com";
+    const baseUrl = process.env.NEXT_PUBLIC_URL || getCanonicalAppUrl() || "";
     const schedulingLink = getSchedulingLink(team, baseUrl) || "";
 
     const smsConfigDoc = await ctx.runQuery(internal.smsConfig.getByTeamId, {

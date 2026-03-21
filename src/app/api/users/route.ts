@@ -1,4 +1,4 @@
-import { fetchMutation } from "convex/nextjs";
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { NextRequest, NextResponse } from 'next/server';
 import { api } from '../../../../convex/_generated/api';
 import { runWithContext, createRequestContext, getLogger, extendContext } from '@/lib/observability';
@@ -16,11 +16,16 @@ export async function GET(request: NextRequest) {
     const log = getLogger();
 
     try {
-      const { token, userEmail, userName, teamId, teamName, userId } = await getAuthenticatedUser();
+      const { token } = await getAuthenticatedUser();
 
       log.info('Fetching user info');
 
       await fetchMutation(api.users.ensureTeam, {}, { token });
+      const freshUser = await fetchQuery(api.users.currentUser, {}, { token });
+      if (!freshUser || !freshUser.userEmail) {
+        throw new AuthError("User not found");
+      }
+      const { userEmail, userName, teamId, teamName, userId } = freshUser;
 
       extendContext({ userEmail });
 

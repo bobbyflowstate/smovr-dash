@@ -16,8 +16,10 @@
     "@auth/core": "^0.37.0",
     "@convex-dev/auth": "^0.0.90",
     "@convex-dev/migrations": "^0.2.9",
+    "bcryptjs": "^3.0.3",
     "convex": "^1.27.0",
     "date-fns": "^4.1.0",
+    "jose": "^6.2.2",
     "next": "^14.2.32",
     "react": "^18",
     "react-datepicker": "^8.7.0",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-datepicker": "^6.2.0",

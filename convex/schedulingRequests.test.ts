@@ -87,6 +87,64 @@ describe("schedulingRequests.createPublic", () => {
     const requests = await asSmith.query(api.schedulingRequests.listForTeam, {});
     expect(requests[0].patientPhone).toBe("5551234567");
   });
+
+  it("rejects creating public requests for archived teams", async () => {
+    const t = convexTest(schema, modules);
+    let archivedTeamId: any;
+    await t.run(async (ctx) => {
+      archivedTeamId = await ctx.db.insert("teams", {
+        name: "Archived Team",
+        isArchived: true,
+        archivedAt: new Date().toISOString(),
+      });
+    });
+
+    await expect(
+      t.mutation(api.schedulingRequests.createPublic, {
+        teamId: archivedTeamId,
+        patientPhone: "5550001234",
+        source: "booking_page",
+      }),
+    ).rejects.toThrow("Team not found");
+  });
+
+  it("rejects booking page requests when feature is disabled", async () => {
+    const t = convexTest(schema, modules);
+    let teamId: any;
+    await t.run(async (ctx) => {
+      teamId = await ctx.db.insert("teams", {
+        name: "Booking Disabled Team",
+        features: { booking_page_enabled: false },
+      });
+    });
+
+    await expect(
+      t.mutation(api.schedulingRequests.createPublic, {
+        teamId,
+        patientPhone: "5550001234",
+        source: "booking_page",
+      }),
+    ).rejects.toThrow("Booking page is disabled");
+  });
+
+  it("rejects website entry requests when feature is disabled", async () => {
+    const t = convexTest(schema, modules);
+    let teamId: any;
+    await t.run(async (ctx) => {
+      teamId = await ctx.db.insert("teams", {
+        name: "Entry Disabled Team",
+        features: { website_entry_enabled: false },
+      });
+    });
+
+    await expect(
+      t.mutation(api.schedulingRequests.createPublic, {
+        teamId,
+        patientPhone: "5550001234",
+        source: "website_button",
+      }),
+    ).rejects.toThrow("Website entry is disabled");
+  });
 });
 
 describe("schedulingRequests.createPublic rate limiting", () => {

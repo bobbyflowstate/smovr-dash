@@ -1,5 +1,5 @@
-import SettingsWrapper from "./SettingsWrapper";
+import { redirect } from "next/navigation";
 
 export default function SettingsPage() {
-  return <SettingsWrapper />;
+  redirect("/");
 }
